@@ -6,7 +6,7 @@ import 'auth_service.dart';
 
 class CompanyApi {
   static final instance = CompanyApi();
-  final _client = ApiHttpClient(requestTimeout: const Duration(seconds: 55));
+  final _client = ApiHttpClient();
   static String operationId() => List.generate(
     24,
     (_) => Random.secure().nextInt(16).toRadixString(16),

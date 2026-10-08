@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:http/http.dart' as http;
+import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'auth_service.dart';
@@ -33,7 +33,7 @@ class ApiService {
   // http://192.168.1.100:8080
   static String _baseUrl = const String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:8080',
+    defaultValue: 'https://radiotechwebapp.onrender.com',
   );
 
   static String get baseUrl => _baseUrl;
@@ -47,7 +47,10 @@ class ApiService {
   static Future<void> initializeEndpoint() async {
     final preferences = await SharedPreferences.getInstance();
     final savedUrl = preferences.getString(_baseUrlKey);
-    if (!kReleaseMode && savedUrl != null && savedUrl.trim().isNotEmpty) {
+    if (!kReleaseMode &&
+        !const bool.hasEnvironment('API_BASE_URL') &&
+        savedUrl != null &&
+        savedUrl.trim().isNotEmpty) {
       _baseUrl = _normalizeBaseUrl(savedUrl);
     }
     _baseUrl = _normalizeBaseUrl(_baseUrl);
@@ -198,6 +201,19 @@ class ApiService {
       headers: await _headers,
     );
     _check(response, 'Impossibile caricare gli incarichi.');
+    return List<Map<String, dynamic>>.from(
+      (_data(response) as List).map(
+        (item) => Map<String, dynamic>.from(item as Map),
+      ),
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getMyReports() async {
+    final response = await _client.get(
+      Uri.parse(_apiV1('/operator/me/reports')),
+      headers: await _headers,
+    );
+    _check(response, 'Impossibile caricare i report.');
     return List<Map<String, dynamic>>.from(
       (_data(response) as List).map(
         (item) => Map<String, dynamic>.from(item as Map),
@@ -743,7 +759,7 @@ class ApiService {
                   },
                   body: await file.readAsBytes(),
                 )
-                .timeout(const Duration(seconds: 40));
+                .timeout(ApiHttpClient.timeout);
             _check(upload, 'Caricamento allegato non riuscito.');
             final uploaded = _data(upload);
             if (uploaded is! Map || uploaded['reference'] is! String) {
@@ -765,7 +781,7 @@ class ApiService {
                 headers: headers,
                 body: jsonEncode(submittedReport),
               )
-              .timeout(const Duration(seconds: 20));
+              .timeout(ApiHttpClient.timeout);
           _check(response, 'Errore invio report.');
           return _data(response);
         },

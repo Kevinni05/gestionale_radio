@@ -15,6 +15,7 @@ class TaskSummary {
           'CHECK_IN': 'CHECKED_IN',
           'CHECKEDIN': 'CHECKED_IN',
           'IN_CORSO': 'IN_PROGRESS',
+          'IN_LAVORAZIONE': 'IN_PROGRESS',
           'IN_ATTESA': 'WAITING',
           'COMPLETATO': 'COMPLETED',
           'REPORT': 'REPORT_SUBMITTED',

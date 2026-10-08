@@ -8,6 +8,8 @@ import 'services/report_document_service.dart';
 import 'theme/radiotech_glass.dart';
 import 'theme/radiotech_content.dart';
 import 'ai_hub_screen.dart' show CompanyRequest;
+import 'models/task_summary.dart';
+import 'services/app_navigation.dart';
 
 class OperatorHistoryScreen extends StatefulWidget {
   const OperatorHistoryScreen({
@@ -23,16 +25,42 @@ class OperatorHistoryScreen extends StatefulWidget {
   State<OperatorHistoryScreen> createState() => _OperatorHistoryScreenState();
 }
 
-class _OperatorHistoryScreenState extends State<OperatorHistoryScreen> {
+class _OperatorHistoryScreenState extends State<OperatorHistoryScreen>
+    with WidgetsBindingObserver {
   late Future<List<Map>> _reports = _load();
   final _search = TextEditingController();
   final _documents = <String, Future<Uint8List>>{};
   final _busy = <String>{};
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    AppNavigation.tasksRevision.addListener(_refreshHistory);
+  }
+
+  void _refreshHistory() {
+    if (mounted) _reload();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshHistory();
+  }
+
   Future<List<Map>> _load() async {
     final request = widget.request ?? CompanyApi.instance.request;
+    Future<dynamic> loadTasks() async {
+      try {
+        return await request('/operator/me/tasks');
+      } catch (_) {
+        return <dynamic>[];
+      }
+    }
+
     final results = await Future.wait([
       request('/operator/me/reports'),
-      request('/operator/me/tasks'),
+      // Reports remain accessible even when the supplementary task lookup fails.
+      loadTasks(),
     ]);
     dynamic unwrap(dynamic v) => v is Map ? v['data'] : v;
     final tasks = {
@@ -62,7 +90,7 @@ class _OperatorHistoryScreenState extends State<OperatorHistoryScreen> {
         'CLOSED',
         'APPROVED',
         'REPORT_SUBMITTED',
-      }.contains(task['status'])) {
+      }.contains(TaskSummary(Map<String, dynamic>.from(task)).status)) {
         continue;
       }
       records.putIfAbsent(
@@ -81,20 +109,34 @@ class _OperatorHistoryScreenState extends State<OperatorHistoryScreen> {
       ..sort((a, b) => _time(b).compareTo(_time(a)));
   }
 
-  static String _id(Map record) =>
-      (record['taskId'] ?? record['id']).toString();
+  static String _id(Map record) {
+    final taskId = record['taskId']?.toString().trim();
+    return taskId != null && taskId.isNotEmpty
+        ? taskId
+        : record['id'].toString();
+  }
+
   static String _time(Map r) =>
       '${r['submittedAt'] ?? r['completedAt'] ?? r['updatedAt'] ?? r['createdAt'] ?? ''}';
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    AppNavigation.tasksRevision.removeListener(_refreshHistory);
     _search.dispose();
     super.dispose();
   }
 
   Future<void> _reload() async {
     _documents.clear();
-    setState(() => _reports = _load());
-    await _reports;
+    final future = _load();
+    setState(() {
+      _reports = future;
+    });
+    try {
+      await _reports;
+    } catch (_) {
+      /* FutureBuilder displays the failure. */
+    }
   }
 
   Future<void> _document(Map r, {required bool download}) async {

@@ -13,7 +13,7 @@ class ApiHttpClient extends http.BaseClient {
 
   final http.Client _inner;
   final Future<String?> Function() _refreshToken;
-  static const timeout = Duration(seconds: 20);
+  static const timeout = Duration(seconds: 65);
   final Duration requestTimeout;
   static final http.Client instance = ApiHttpClient();
 

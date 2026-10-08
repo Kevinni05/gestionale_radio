@@ -110,9 +110,15 @@ class _HomeScreenState extends State<HomeScreen>
   late final Animation<double> _pulse;
   int _syncRefreshToken = 0;
   late Future<List<Map<String, dynamic>>> _tasks;
+  late Future<List<Map<String, dynamic>>> _reports;
 
   void _refreshTasks() {
-    if (mounted) setState(() => _tasks = ApiService.instance.getMyTasks());
+    if (mounted) {
+      setState(() {
+        _tasks = ApiService.instance.getMyTasks();
+        _reports = ApiService.instance.getMyReports();
+      });
+    }
   }
 
   @override
@@ -120,6 +126,7 @@ class _HomeScreenState extends State<HomeScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _tasks = ApiService.instance.getMyTasks();
+    _reports = ApiService.instance.getMyReports();
     AppNavigation.requestedTask.addListener(_openRequestedTask);
     AppNavigation.tasksRevision.addListener(_refreshTasks);
     WidgetsBinding.instance.addPostFrameCallback((_) => _openRequestedTask());
@@ -497,21 +504,12 @@ class _HomeScreenState extends State<HomeScreen>
   // ==========================================================
 
   Widget _buildHero(BuildContext context) {
-    final userId = FirebaseAuth.instance.currentUser?.uid;
-    final tenantId = SessionService.instance.tenantId;
-
-    return StreamBuilder<QuerySnapshot>(
-      stream: userId == null || tenantId == null
-          ? null
-          : FirebaseFirestore.instance
-                .collection('maintenanceReports')
-                .where('tenantId', isEqualTo: tenantId)
-                .where('operatorFirebaseUid', isEqualTo: userId)
-                .snapshots(),
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _reports,
       builder: (context, reportSnapshot) {
         final completedReports = reportSnapshot.hasData
-            ? reportSnapshot.data!.docs.length
-            : 0;
+            ? reportSnapshot.data!.length.toString()
+            : '—';
 
         return FutureBuilder<List<Map<String, dynamic>>>(
           future: _tasks,
