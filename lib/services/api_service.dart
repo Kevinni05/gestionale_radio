@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -740,6 +739,7 @@ class ApiService {
                   headers: {
                     ...headers,
                     'Content-Type': 'application/octet-stream',
+                    'Idempotency-Key': '${safeRequestKey}_$index',
                   },
                   body: await file.readAsBytes(),
                 )
@@ -913,18 +913,6 @@ class ApiService {
       await OfflineSyncService.instance.enqueue(action, payload);
       throw queuedFailure(
         'Connessione assente: l\'operazione è stata salvata e verrà sincronizzata automaticamente.',
-      );
-    } on FirebaseException catch (error) {
-      if (!const {
-        'storage/retry-limit-exceeded',
-        'storage/unknown',
-        'storage/network-request-failed',
-      }.contains(error.code)) {
-        rethrow;
-      }
-      await OfflineSyncService.instance.enqueue(action, payload);
-      throw queuedFailure(
-        'Storage temporaneamente non disponibile. Allegati e report sono in coda per il retry.',
       );
     } on _RetryableApiException catch (error) {
       await OfflineSyncService.instance.enqueue(action, payload);
