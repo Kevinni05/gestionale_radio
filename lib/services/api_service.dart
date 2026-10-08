@@ -722,47 +722,36 @@ class ApiService {
             RegExp(r'[^A-Za-z0-9_-]'),
             '_',
           );
-          var localFiles = false;
-          if (staged.isNotEmpty) {
-            final config = await _client
-                .get(Uri.parse(_apiV1('/files/config')), headers: headers)
-                .timeout(const Duration(seconds: 20));
-            _check(config, 'Verifica archivio allegati non riuscita.');
-            localFiles = _data(config)['mode'] == 'LOCAL';
-          }
           for (var index = 0; index < staged.length; index++) {
             final attachment = staged[index];
             final file = await _reportAttachmentStore.resolve(attachment);
             final name = attachment['name']?.toString() ?? 'attachment';
-            final remoteName = '${safeRequestKey}_${index}_$name';
-            if (localFiles) {
-              if (await file.length() > 10000000) {
-                throw StateError('Allegato troppo grande: limite 10 MB.');
-              }
-              final upload = await _client
-                  .post(
-                    Uri.parse(_apiV1('/files')).replace(
-                      queryParameters: {
-                        'operationId': '${safeRequestKey}_$index',
-                        'name': name,
-                      },
-                    ),
-                    headers: {
-                      ...headers,
-                      'Content-Type': 'application/octet-stream',
-                    },
-                    body: await file.readAsBytes(),
-                  )
-                  .timeout(const Duration(seconds: 40));
-              _check(upload, 'Caricamento allegato non riuscito.');
-              attachmentUrls.add(_data(upload)['reference'] as String);
-              continue;
+            if (await file.length() > 10000000) {
+              throw StateError('Allegato troppo grande: limite 10 MB.');
             }
-            final reference = FirebaseStorage.instance.ref(
-              'tenants/$tenantId/maintenance-reports/$actorUid/$remoteName',
-            );
-            await reference.putFile(file);
-            attachmentUrls.add(await reference.getDownloadURL());
+            final upload = await _client
+                .post(
+                  Uri.parse(_apiV1('/files')).replace(
+                    queryParameters: {
+                      'operationId': '${safeRequestKey}_$index',
+                      'name': name,
+                    },
+                  ),
+                  headers: {
+                    ...headers,
+                    'Content-Type': 'application/octet-stream',
+                  },
+                  body: await file.readAsBytes(),
+                )
+                .timeout(const Duration(seconds: 40));
+            _check(upload, 'Caricamento allegato non riuscito.');
+            final uploaded = _data(upload);
+            if (uploaded is! Map || uploaded['reference'] is! String) {
+              throw const FormatException(
+                'Risposta upload allegato non valida.',
+              );
+            }
+            attachmentUrls.add(uploaded['reference'] as String);
           }
           submittedReport['attachments'] = attachmentUrls;
 
