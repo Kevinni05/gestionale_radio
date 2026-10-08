@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1051055442339",
+    "project_id": "gestionale-radio",
+    "storage_bucket": "gestionale-radio.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1051055442339:android:f495a6326f7a7465fb7216",
+        "android_client_info": {
+          "package_name": "com.example.gestionale_radio"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyALNwdTTX6IVUuPsuvMkyWLhmYOCmchR4E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

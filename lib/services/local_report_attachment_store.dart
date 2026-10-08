@@ -1,0 +1,141 @@
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:path_provider/path_provider.dart';
+
+typedef SupportDirectoryProvider = Future<Directory> Function();
+
+class LocalReportAttachmentStore {
+  LocalReportAttachmentStore({
+    SupportDirectoryProvider? supportDirectoryProvider,
+  }) : _supportDirectoryProvider =
+           supportDirectoryProvider ?? getApplicationSupportDirectory;
+
+  final SupportDirectoryProvider _supportDirectoryProvider;
+
+  Future<List<Map<String, String>>> stage({
+    required String requestKey,
+    Iterable<File> files = const <File>[],
+    Map<String, Uint8List> bytes = const <String, Uint8List>{},
+  }) async {
+    final supportDirectory = await _supportDirectoryProvider();
+    final storageRoot = Directory(
+      '${supportDirectory.path}${Platform.pathSeparator}radiotech_pending_reports',
+    );
+    final requestDirectory = Directory(
+      '${storageRoot.path}${Platform.pathSeparator}${_safeSegment(requestKey)}',
+    );
+    if (await requestDirectory.exists()) {
+      if (!await requestDirectory.list().isEmpty) {
+        throw StateError('Esiste già un report in attesa con questa chiave.');
+      }
+    }
+    await requestDirectory.create(recursive: true);
+
+    final staged = <Map<String, String>>[];
+    var index = 0;
+    try {
+      for (final source in files) {
+        final sourceName = source.uri.pathSegments.isEmpty
+            ? 'attachment.bin'
+            : source.uri.pathSegments.last;
+        staged.add(
+          await _copyFile(source, requestDirectory, index++, sourceName),
+        );
+      }
+      for (final entry in bytes.entries) {
+        staged.add(
+          await _writeBytes(entry.value, requestDirectory, index++, entry.key),
+        );
+      }
+      return staged;
+    } catch (_) {
+      if (await requestDirectory.exists()) {
+        await requestDirectory.delete(recursive: true);
+      }
+      rethrow;
+    }
+  }
+
+  Future<File> resolve(Map<String, dynamic> attachment) async {
+    final file = File(attachment['path']?.toString() ?? '');
+    final root = await _storageRoot();
+    final rootPath = root.absolute.path;
+    final filePath = file.absolute.path;
+    if (!_isStoredPath(filePath, rootPath)) {
+      throw StateError('Percorso allegato locale non valido.');
+    }
+    if (!await file.exists()) {
+      throw StateError(
+        'Allegato locale non disponibile: ${attachment['name']}.',
+      );
+    }
+    return file;
+  }
+
+  Future<void> remove(List<Map<String, dynamic>> attachments) async {
+    for (final attachment in attachments) {
+      try {
+        final file = await resolve(attachment);
+        await file.delete();
+      } on StateError {
+        continue;
+      }
+    }
+    if (attachments.isEmpty) return;
+
+    final firstPath = attachments.first['path']?.toString();
+    if (firstPath == null || firstPath.isEmpty) return;
+    final storageRoot = await _storageRoot();
+    final rootPath = storageRoot.absolute.path;
+    final requestDirectory = File(firstPath).absolute.parent;
+    if (_isStoredPath(requestDirectory.path, rootPath) &&
+        requestDirectory.parent.path == rootPath &&
+        await requestDirectory.exists()) {
+      await requestDirectory.delete(recursive: true);
+    }
+  }
+
+  Future<Map<String, String>> _copyFile(
+    File source,
+    Directory destination,
+    int index,
+    String name,
+  ) async {
+    if (!await source.exists()) {
+      throw StateError('File allegato non disponibile: $name.');
+    }
+    final target = File(_targetPath(destination, index, name));
+    await source.copy(target.path);
+    return {'name': _safeSegment(name), 'path': target.path};
+  }
+
+  Future<Map<String, String>> _writeBytes(
+    Uint8List bytes,
+    Directory destination,
+    int index,
+    String name,
+  ) async {
+    final target = File(_targetPath(destination, index, name));
+    await target.writeAsBytes(bytes, flush: true);
+    return {'name': _safeSegment(name), 'path': target.path};
+  }
+
+  String _targetPath(Directory destination, int index, String name) =>
+      '${destination.path}${Platform.pathSeparator}${index}_${_safeSegment(name)}';
+
+  Future<Directory> _storageRoot() async {
+    final supportDirectory = await _supportDirectoryProvider();
+    return Directory(
+      '${supportDirectory.path}${Platform.pathSeparator}radiotech_pending_reports',
+    );
+  }
+
+  bool _isStoredPath(String path, String rootPath) =>
+      path.startsWith('$rootPath${Platform.pathSeparator}');
+
+  String _safeSegment(String value) {
+    final safe = value.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    return safe.isEmpty ? 'attachment' : safe;
+  }
+}

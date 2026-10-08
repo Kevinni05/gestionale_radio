@@ -1,0 +1,4 @@
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/radiotech_icon_background" />
+    <item android:drawable="@drawable/radiotech_icon_foreground" />
+</layer-list>

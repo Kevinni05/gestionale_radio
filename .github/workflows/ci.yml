@@ -1,0 +1,49 @@
+name: Gestionale Radio CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  flutter:
+    name: Flutter checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.44.9'
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze Flutter project
+        run: flutter analyze
+
+      - name: Run Flutter tests
+        run: flutter test --reporter expanded
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Compile Android QA application
+        run: flutter build apk --debug --dart-define=API_BASE_URL=http://10.0.2.2:8080
+
+      - name: Store QA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: radiotech-android-qa
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 14
