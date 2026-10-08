@@ -6,7 +6,7 @@ import 'package:path_provider/path_provider.dart';
 typedef SupportDirectoryProvider = Future<Directory> Function();
 
 class LocalReportAttachmentStore {
-  static const int maxAttachmentBytes = 10 * 1024 * 1024;
+  static const int maxAttachmentBytes = 10000000;
   static const int maxAttachmentCount = 50;
   static const int maxStagedBytes = 100 * 1024 * 1024;
 
