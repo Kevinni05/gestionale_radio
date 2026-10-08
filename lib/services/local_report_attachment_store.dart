@@ -6,6 +6,10 @@ import 'package:path_provider/path_provider.dart';
 typedef SupportDirectoryProvider = Future<Directory> Function();
 
 class LocalReportAttachmentStore {
+  static const int maxAttachmentBytes = 10 * 1024 * 1024;
+  static const int maxAttachmentCount = 50;
+  static const int maxStagedBytes = 100 * 1024 * 1024;
+
   LocalReportAttachmentStore({
     SupportDirectoryProvider? supportDirectoryProvider,
   }) : _supportDirectoryProvider =
@@ -18,6 +22,37 @@ class LocalReportAttachmentStore {
     Iterable<File> files = const <File>[],
     Map<String, Uint8List> bytes = const <String, Uint8List>{},
   }) async {
+    final fileList = files.toList(growable: false);
+    final itemCount = fileList.length + bytes.length;
+    if (itemCount > maxAttachmentCount) {
+      throw StateError(
+        'Troppi allegati: massimo $maxAttachmentCount elementi per report.',
+      );
+    }
+
+    var totalBytes = 0;
+    for (final source in fileList) {
+      if (!await source.exists()) {
+        throw StateError('File allegato non disponibile.');
+      }
+      final length = await source.length();
+      if (length > maxAttachmentBytes) {
+        throw StateError('Allegato troppo grande: limite 10 MB.');
+      }
+      totalBytes += length;
+    }
+    for (final data in bytes.values) {
+      if (data.length > maxAttachmentBytes) {
+        throw StateError('Allegato troppo grande: limite 10 MB.');
+      }
+      totalBytes += data.length;
+    }
+    if (totalBytes > maxStagedBytes) {
+      throw StateError(
+        'Dimensione complessiva allegati eccessiva: limite 100 MB.',
+      );
+    }
+
     final supportDirectory = await _supportDirectoryProvider();
     final storageRoot = Directory(
       '${supportDirectory.path}${Platform.pathSeparator}radiotech_pending_reports',
@@ -35,7 +70,7 @@ class LocalReportAttachmentStore {
     final staged = <Map<String, String>>[];
     var index = 0;
     try {
-      for (final source in files) {
+      for (final source in fileList) {
         final sourceName = source.uri.pathSegments.isEmpty
             ? 'attachment.bin'
             : source.uri.pathSegments.last;
@@ -69,6 +104,9 @@ class LocalReportAttachmentStore {
       throw StateError(
         'Allegato locale non disponibile: ${attachment['name']}.',
       );
+    }
+    if (await file.length() > maxAttachmentBytes) {
+      throw StateError('Allegato locale oltre il limite di 10 MB.');
     }
     return file;
   }
