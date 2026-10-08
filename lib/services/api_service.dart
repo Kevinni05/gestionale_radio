@@ -741,7 +741,7 @@ class ApiService {
             final attachment = staged[index];
             final file = await _reportAttachmentStore.resolve(attachment);
             final name = attachment['name']?.toString() ?? 'attachment';
-            if (await file.length() > 10000000) {
+            if (await file.length() > LocalReportAttachmentStore.maxAttachmentBytes) {
               throw StateError('Allegato troppo grande: limite 10 MB.');
             }
             final upload = await _client
