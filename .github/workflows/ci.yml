@@ -23,6 +23,61 @@ jobs:
           flutter-version: '3.44.9'
           cache: true
 
+      - name: Reject tracked private key material
+        shell: bash
+        run: |
+          set -euo pipefail
+          tracked_sensitive="$(git ls-files | grep -E '(^|/)(\.env(\..*)?|key\.properties|[^/]+\.(jks|keystore|p12|pfx|pem|key))
+      - name: Analyze Flutter project
+        run: flutter analyze
+
+      - name: Run Flutter tests
+        run: flutter test --reporter expanded
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Compile Android QA application
+        run: flutter build apk --debug --dart-define=API_BASE_URL=http://10.0.2.2:8080
+
+      - name: Store QA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: radiotech-android-qa
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 14
+ | grep -v -E '(^|/)\.env\.example
+      - name: Analyze Flutter project
+        run: flutter analyze
+
+      - name: Run Flutter tests
+        run: flutter test --reporter expanded
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Compile Android QA application
+        run: flutter build apk --debug --dart-define=API_BASE_URL=http://10.0.2.2:8080
+
+      - name: Store QA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: radiotech-android-qa
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 14
+ || true)"
+          if [ -n "$tracked_sensitive" ]; then
+            echo "Sensitive files must not be committed:"
+            echo "$tracked_sensitive"
+            exit 1
+          fi
+
       - name: Install Flutter dependencies
         run: flutter pub get
 
