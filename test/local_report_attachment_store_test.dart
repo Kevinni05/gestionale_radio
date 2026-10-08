@@ -74,6 +74,52 @@ void main() {
     },
   );
 
+
+  test('rejects oversized staged attachments before copying them', () async {
+    final source = File(
+      '${supportDirectory.path}${Platform.pathSeparator}too-large.bin',
+    );
+    await source.writeAsBytes(
+      List<int>.filled(
+        LocalReportAttachmentStore.maxAttachmentBytes + 1,
+        0,
+      ),
+      flush: true,
+    );
+    final store = LocalReportAttachmentStore(
+      supportDirectoryProvider: () async => supportDirectory,
+    );
+
+    await expectLater(
+      store.stage(requestKey: 'oversized', files: [source]),
+      throwsStateError,
+    );
+
+    final stagedRoot = Directory(
+      '${supportDirectory.path}${Platform.pathSeparator}radiotech_pending_reports',
+    );
+    expect(await stagedRoot.exists(), isFalse);
+  });
+
+  test('rejects too many staged attachments without touching storage', () async {
+    final store = LocalReportAttachmentStore(
+      supportDirectoryProvider: () async => supportDirectory,
+    );
+    final bytes = <String, Uint8List>{
+      for (
+        var i = 0;
+        i < LocalReportAttachmentStore.maxAttachmentCount + 1;
+        i++
+      )
+        'item-$i.bin': Uint8List.fromList([i % 255]),
+    };
+
+    await expectLater(
+      store.stage(requestKey: 'too-many', bytes: bytes),
+      throwsStateError,
+    );
+  });
+
   test('rejects attachment paths outside the app support store', () async {
     final store = LocalReportAttachmentStore(
       supportDirectoryProvider: () async => supportDirectory,
