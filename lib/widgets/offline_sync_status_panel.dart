@@ -189,6 +189,22 @@ class _OfflineSyncStatusPanelState extends State<OfflineSyncStatusPanel> {
           ),
         ),
         actions: [
+          if (_actions.any((action) => !action.failed))
+            TextButton.icon(
+              onPressed: () async {
+                Navigator.of(dialogContext).pop();
+                await _service.retryPending(force: true);
+                await _refresh();
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Sincronizzazione manuale completata.'),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.sync),
+              label: const Text('Sincronizza ora'),
+            ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text('Chiudi'),
