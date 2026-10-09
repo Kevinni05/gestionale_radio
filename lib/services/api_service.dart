@@ -4,7 +4,6 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:http/http.dart' as http;
-import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'auth_service.dart';
@@ -742,7 +741,7 @@ class ApiService {
             final attachment = staged[index];
             final file = await _reportAttachmentStore.resolve(attachment);
             final name = attachment['name']?.toString() ?? 'attachment';
-            if (await file.length() > 10000000) {
+            if (await file.length() > LocalReportAttachmentStore.maxAttachmentBytes) {
               throw StateError('Allegato troppo grande: limite 10 MB.');
             }
             final upload = await _client
@@ -756,6 +755,7 @@ class ApiService {
                   headers: {
                     ...headers,
                     'Content-Type': 'application/octet-stream',
+                    'Idempotency-Key': '${safeRequestKey}_$index',
                   },
                   body: await file.readAsBytes(),
                 )
@@ -929,18 +929,6 @@ class ApiService {
       await OfflineSyncService.instance.enqueue(action, payload);
       throw queuedFailure(
         'Connessione assente: l\'operazione è stata salvata e verrà sincronizzata automaticamente.',
-      );
-    } on FirebaseException catch (error) {
-      if (!const {
-        'storage/retry-limit-exceeded',
-        'storage/unknown',
-        'storage/network-request-failed',
-      }.contains(error.code)) {
-        rethrow;
-      }
-      await OfflineSyncService.instance.enqueue(action, payload);
-      throw queuedFailure(
-        'Storage temporaneamente non disponibile. Allegati e report sono in coda per il retry.',
       );
     } on _RetryableApiException catch (error) {
       await OfflineSyncService.instance.enqueue(action, payload);
