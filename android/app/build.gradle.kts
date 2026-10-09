@@ -17,6 +17,14 @@ val releaseKeyFile = System.getenv("ANDROID_KEY_PROPERTIES_PATH")?.let { file(it
 if (releaseKeyFile.exists()) releaseKeyFile.inputStream().use { releaseKeys.load(it) }
 fun releaseKey(name: String, env: String): String? = System.getenv(env) ?: releaseKeys.getProperty(name)
 val releaseStore = releaseKey("storeFile", "ANDROID_KEYSTORE_PATH")
+val buyerApplicationId = System.getenv("ANDROID_APPLICATION_ID")
+    ?.trim()
+    ?.takeIf { it.isNotEmpty() }
+    ?: "com.example.gestionale_radio"
+val buyerAppName = System.getenv("ANDROID_APP_NAME")
+    ?.trim()
+    ?.takeIf { it.isNotEmpty() }
+    ?: "RadioTech"
 
 gradle.taskGraph.whenReady {
     if (allTasks.any { it.name == "assembleRelease" || it.name == "bundleRelease" }) {
@@ -37,11 +45,12 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.gestionale_radio"
+        applicationId = buyerApplicationId
         minSdk = 24
         targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["appLabel"] = buyerAppName
     }
 
     signingConfigs {
