@@ -37,7 +37,9 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.gestionale_radio"
+        applicationId = System.getenv("ANDROID_APPLICATION_ID") ?: "com.example.gestionale_radio"
+        manifestPlaceholders["appLabel"] =
+            System.getenv("ANDROID_APP_LABEL") ?: "RadioTech"
         minSdk = 24
         targetSdk = 36
         versionCode = flutter.versionCode
