@@ -54,6 +54,46 @@ void main() {
     service.stop();
   });
 
+  testWidgets('pending sync can be forced manually from the queue dialog', (
+    tester,
+  ) async {
+    final service = OfflineSyncService.instance;
+    await service.clear();
+    await service.enqueue('task_status_update', {
+      'id': 'task-waiting',
+      'status': 'ACCEPTED',
+      'idempotencyKey': 'task-waiting-key',
+    });
+    var attempts = 0;
+    await service.start(
+      interval: const Duration(hours: 1),
+      executor: (_, _) {
+        attempts++;
+        if (attempts == 1) {
+          return Future<void>.error(Exception('temporary'));
+        }
+        return Future<void>.value();
+      },
+    );
+
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: OfflineSyncStatusPanel())),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('1 in attesa · 0 da risolvere'), findsOneWidget);
+
+    await tester.tap(find.text('1 in attesa · 0 da risolvere'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sincronizza ora'), findsOneWidget);
+
+    await tester.tap(find.text('Sincronizza ora'));
+    await tester.pumpAndSettle();
+
+    expect(attempts, 2);
+    expect(await service.pending(), isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('failed sync can be removed only after confirmation', (
     tester,
   ) async {
