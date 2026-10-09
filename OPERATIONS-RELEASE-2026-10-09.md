@@ -20,3 +20,11 @@ La nuova firma non può aggiornare direttamente la build di test precedente. Nes
 Documentazione completa per monitoraggio, backup, restore e futura configurazione oggetti: repository web, `docs/OPERATIONS-RELEASE-2026-10-09.md`.
 
 Verifiche locali dopo l'integrazione del commit remoto `a7884b0`: analisi Flutter senza problemi e **119 test superati**, inclusi paginazione con errori di rete, stato API e validazione del canale di aggiornamento.
+
+Artefatti locali completati e verificati: `artifacts/RadioTech-1.5.0-2021.apk` (81.590.800 byte) e `artifacts/RadioTech-1.5.0-2021.aab` (73.987.205 byte), entrambi con il certificato di produzione indicato. APK verificato con apksigner, identità/versione con apkanalyzer; AAB compilato con esito Flutter positivo e verificato con jarsigner/keytool. L'APK include il permesso Internet e `libapp.so` per le tre architetture.
+
+SHA-256 APK: `0cb596b8ef1a9907dfb5c9e29b03888a0d1c8464be83a3d999b09b7eaa1c7fad`.
+
+SHA-256 AAB: `ee97794bc9820c5660cb8a5170328692520c2b26ca275a209abe75e43f54b13c`.
+
+Gli Android command-line tools mancavano sul PC e impedivano la verifica finale del bundle; è stato installato il pacchetto ufficiale verificandone lo SHA-256 pubblicato da Google. Gli script accettano sia il formato certificato dei build-tools 36 sia quello dei build-tools 37.
