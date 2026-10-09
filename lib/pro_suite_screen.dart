@@ -8,6 +8,7 @@ import 'services/session_service.dart';
 import 'services/auth_service.dart';
 import 'offline_packs_screen.dart';
 import 'security_pro_screen.dart';
+import 'services/app_branding.dart';
 
 class ProSuiteScreen extends StatefulWidget {
   const ProSuiteScreen({super.key, this.loadResource});
@@ -213,7 +214,7 @@ class _ProSuiteScreenState extends State<ProSuiteScreen> {
             'assets/brand/radiotech-symbol-v1.png',
             width: 28,
             height: 28,
-            semanticLabel: 'Logo RadioTech',
+            semanticLabel: 'Logo ${AppBranding.name}',
           ),
           const SizedBox(width: 10),
           const Flexible(
