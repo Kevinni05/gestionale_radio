@@ -6,13 +6,13 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <application
-        android:label="RadioTech"
+        android:label="${appLabel}"
         android:allowBackup="false"
         android:usesCleartextTraffic="false"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
-            android:name=".MainActivity"
+            android:name="com.example.gestionale_radio.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""
