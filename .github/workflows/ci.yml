@@ -58,3 +58,131 @@ jobs:
           name: radiotech-android-qa
           path: build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 14
+
+
+  distribute-android:
+    name: Distribute Android to Firebase
+    needs: flutter
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      FIREBASE_APP_ID: '1:1051055442339:android:f495a6326f7a7465fb7216'
+      FIREBASE_PROJECT_ID: 'gestionale-radio'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check distribution configuration
+        id: distribution-config
+        shell: bash
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_APP_DISTRIBUTION_SERVICE_ACCOUNT_JSON }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_DISTRIBUTION_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DISTRIBUTION_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_DISTRIBUTION_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_DISTRIBUTION_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "$FIREBASE_SERVICE_ACCOUNT_JSON" ] &&
+             [ -n "$ANDROID_KEYSTORE_BASE64" ] &&
+             [ -n "$ANDROID_KEYSTORE_PASSWORD" ] &&
+             [ -n "$ANDROID_KEY_ALIAS" ] &&
+             [ -n "$ANDROID_KEY_PASSWORD" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Firebase App Distribution skipped: configure the distribution credentials and signing secrets."
+          fi
+
+      - name: Set up Flutter
+        if: steps.distribution-config.outputs.enabled == 'true'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.44.9'
+          cache: true
+
+      - name: Set up Java
+        if: steps.distribution-config.outputs.enabled == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Restore stable Android signing key
+        if: steps.distribution-config.outputs.enabled == 'true'
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_DISTRIBUTION_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DISTRIBUTION_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_DISTRIBUTION_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_DISTRIBUTION_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYSTORE_PATH="$RUNNER_TEMP/radiotech-distribution.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+          echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+          echo "ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_PASSWORD=$ANDROID_KEY_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Install Flutter dependencies
+        if: steps.distribution-config.outputs.enabled == 'true'
+        run: flutter pub get
+
+      - name: Build signed production APK
+        if: steps.distribution-config.outputs.enabled == 'true'
+        run: flutter build apk --release --dart-define-from-file=config/render.json
+
+      - name: Prepare Firebase credentials
+        if: steps.distribution-config.outputs.enabled == 'true'
+        shell: bash
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_APP_DISTRIBUTION_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          CREDENTIALS_PATH="$RUNNER_TEMP/firebase-app-distribution.json"
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$CREDENTIALS_PATH"
+          chmod 600 "$CREDENTIALS_PATH"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$CREDENTIALS_PATH" >> "$GITHUB_ENV"
+
+      - name: Install Firebase CLI
+        if: steps.distribution-config.outputs.enabled == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Distribute APK to Firebase App Distribution
+        if: steps.distribution-config.outputs.enabled == 'true'
+        shell: bash
+        env:
+          FIREBASE_TESTERS: ${{ vars.FIREBASE_APP_DISTRIBUTION_TESTERS }}
+          FIREBASE_GROUPS: ${{ vars.FIREBASE_APP_DISTRIBUTION_GROUPS }}
+        run: |
+          set -euo pipefail
+          npm install --global firebase-tools
+          args=(
+            appdistribution:distribute
+            build/app/outputs/flutter-apk/app-release.apk
+            --app "$FIREBASE_APP_ID"
+            --project "$FIREBASE_PROJECT_ID"
+            --release-notes "RadioTech automatic build ${GITHUB_SHA::7} from main"
+          )
+          if [ -n "$FIREBASE_TESTERS" ]; then
+            args+=(--testers "$FIREBASE_TESTERS")
+          fi
+          if [ -n "$FIREBASE_GROUPS" ]; then
+            args+=(--groups "$FIREBASE_GROUPS")
+          fi
+          firebase "${args[@]}"
+
+      - name: Upload signed APK artifact
+        if: steps.distribution-config.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: radiotech-android-distribution
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 14
