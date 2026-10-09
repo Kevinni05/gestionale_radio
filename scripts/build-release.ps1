@@ -12,8 +12,10 @@ $health = Invoke-RestMethod -Uri ($ApiBaseUrl.TrimEnd('/') + '/api/v1/health') -
 if ($health.service -ne 'radiotech-backend' -or $health.status -ne 'UP') { throw 'The URL does not serve a healthy RadioTech backend.' }
 $ready = Invoke-RestMethod -Uri ($ApiBaseUrl.TrimEnd('/') + '/actuator/health/readiness') -TimeoutSec 15
 if ($ready.status -ne 'UP') { throw 'The backend is not production ready.' }
-flutter pub get
-if ($LASTEXITCODE -ne 0) { throw 'Dependency resolution failed.' }
+flutter pub get --enforce-lockfile
+if ($LASTEXITCODE -ne 0) { throw 'Dependency resolution or lockfile verification failed.' }
+dart format --output=none --set-exit-if-changed lib test
+if ($LASTEXITCODE -ne 0) { throw 'Dart formatting check failed.' }
 flutter analyze
 if ($LASTEXITCODE -ne 0) { throw 'Static analysis failed.' }
 flutter test
