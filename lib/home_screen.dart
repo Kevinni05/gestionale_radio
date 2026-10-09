@@ -22,6 +22,7 @@ import 'widgets/api_connection_badge.dart';
 import 'widgets/android_update_button.dart';
 import 'tasks_screen.dart';
 import 'services/app_navigation.dart';
+import 'services/app_branding.dart';
 import 'ai_hub_screen.dart';
 import 'workforce_screen.dart';
 import 'pro_suite_screen.dart';
@@ -341,7 +342,7 @@ class _HomeScreenState extends State<HomeScreen>
                 'assets/brand/radiotech-symbol-v1.png',
                 width: 38,
                 height: 38,
-                semanticLabel: 'Logo RadioTech',
+                semanticLabel: 'Logo ${AppBranding.name}',
               ),
             ),
             Expanded(
