@@ -98,6 +98,18 @@ class SyncConflictException extends PermanentSyncFailure {
   const SyncConflictException(super.message);
 }
 
+class _QueueSnapshot {
+  const _QueueSnapshot({
+    required this.items,
+    required this.revision,
+    required this.encoded,
+  });
+
+  final List<QueuedSyncAction> items;
+  final int revision;
+  final String encoded;
+}
+
 class OfflineSyncService {
   OfflineSyncService._();
 
@@ -105,6 +117,8 @@ class OfflineSyncService {
 
   static const String _queueKey = 'offline_sync_queue';
   static const String _queueBackupKey = 'offline_sync_queue_backup';
+  static const int _queueFormatVersion = 2;
+  static const int maxQueueItems = 200;
   static const int maxRetryAttempts = 8;
   static const Duration _baseRetryDelay = Duration(seconds: 30);
   static const Duration _maxRetryDelay = Duration(hours: 1);
@@ -155,30 +169,51 @@ class OfflineSyncService {
 
   Future<void> enqueue(String action, Map<String, dynamic> payload) =>
       _serialize(() async {
-        final prefs = await SharedPreferences.getInstance();
+        final normalizedAction = action.trim();
+        if (normalizedAction.isEmpty) {
+          throw ArgumentError.value(
+            action,
+            'action',
+            'Azione offline obbligatoria.',
+          );
+        }
+        try {
+          jsonEncode(payload);
+        } on JsonUnsupportedObjectError {
+          throw ArgumentError.value(
+            payload,
+            'payload',
+            'Il payload offline deve essere serializzabile.',
+          );
+        }
+
         final current = await _loadQueue();
         final idempotencyKey = payload['idempotencyKey']?.toString();
         if (idempotencyKey != null && idempotencyKey.isNotEmpty) {
           final alreadyQueued = current.any(
             (entry) =>
-                entry.action == action &&
+                entry.action == normalizedAction &&
                 entry.payload['actorUid'] == payload['actorUid'] &&
                 entry.payload['tenantId'] == payload['tenantId'] &&
                 entry.payload['idempotencyKey']?.toString() == idempotencyKey,
           );
           if (alreadyQueued) return;
         }
+        if (current.length >= maxQueueItems) {
+          throw StateError(
+            'Coda offline piena: risolvi o rimuovi alcune operazioni prima di continuare.',
+          );
+        }
 
-        final item = QueuedSyncAction(
-          id: '${DateTime.now().microsecondsSinceEpoch}_$action',
-          action: action,
-          payload: payload,
-          createdAt: DateTime.now().toUtc(),
+        current.add(
+          QueuedSyncAction(
+            id: '${DateTime.now().microsecondsSinceEpoch}_$normalizedAction',
+            action: normalizedAction,
+            payload: Map<String, dynamic>.from(payload),
+            createdAt: DateTime.now().toUtc(),
+          ),
         );
-        current.add(item);
-        final encoded = jsonEncode(current.map((e) => e.toJson()).toList());
-        await prefs.setString(_queueKey, encoded);
-        await prefs.setString(_queueBackupKey, encoded);
+        await _persistQueue(current);
       });
 
   Future<String> persistentIdempotencyKey(String scope) async {
@@ -217,18 +252,17 @@ class OfflineSyncService {
   }
 
   Future<void> remove(String id) => _serialize(() async {
-    final prefs = await SharedPreferences.getInstance();
     final queue = await _loadQueue();
     final filtered = queue.where((entry) => entry.id != id).toList();
-    final encoded = jsonEncode(filtered.map((e) => e.toJson()).toList());
-    await prefs.setString(_queueKey, encoded);
-    await prefs.setString(_queueBackupKey, encoded);
+    if (filtered.length == queue.length) return;
+    await _persistQueue(filtered);
   });
 
   Future<void> clear() => _serialize(() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_queueKey);
     await prefs.remove(_queueBackupKey);
+    _queueCorrupted = false;
   });
 
   Future<void> retryFailed(String id) async {
@@ -280,7 +314,7 @@ class OfflineSyncService {
           continue;
         }
         try {
-          await _executor!(item.action, item.payload);
+          await _executor!(item.action, Map<String, dynamic>.from(item.payload));
           await remove(item.id);
         } on SyncDeferredException {
           // A different account or no account is active. Preserve retry budget.
@@ -318,73 +352,125 @@ class OfflineSyncService {
 
   Future<List<QueuedSyncAction>> _loadQueue() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_queueKey);
+    final primaryRaw = prefs.getString(_queueKey);
     final backupRaw = prefs.getString(_queueBackupKey);
-
-    final hasPrimary = raw != null && raw.trim().isNotEmpty;
+    final hasPrimary = primaryRaw != null && primaryRaw.trim().isNotEmpty;
     final hasBackup = backupRaw != null && backupRaw.trim().isNotEmpty;
-    final parsed = hasPrimary ? _decodeQueue(raw) : null;
-    if (parsed != null) {
+    final primary = hasPrimary ? _decodeSnapshot(primaryRaw) : null;
+    final backup = hasBackup ? _decodeSnapshot(backupRaw) : null;
+
+    if (primary == null && backup == null) {
+      if (hasPrimary || hasBackup) {
+        _queueCorrupted = true;
+        throw StateError(
+          'La coda offline è corrotta e non è stato possibile recuperare il backup.',
+        );
+      }
       _queueCorrupted = false;
-      await prefs.setString(_queueBackupKey, raw!);
-      return parsed;
-    }
-
-    final backupParsed = hasBackup ? _decodeQueue(backupRaw) : null;
-    if (backupParsed != null) {
-      _queueCorrupted = false;
-      await prefs.setString(_queueKey, backupRaw!);
-      return backupParsed;
-    }
-
-    if (hasPrimary || hasBackup) {
-      _queueCorrupted = true;
-      throw StateError(
-        'La coda offline è corrotta e non è stato possibile recuperare il backup.',
-      );
-    }
-
-    _queueCorrupted = false;
-    return <QueuedSyncAction>[];
-  }
-
-  List<QueuedSyncAction>? _decodeQueue(String? raw) {
-    if (raw == null || raw.trim().isEmpty) {
       return <QueuedSyncAction>[];
     }
 
+    late final _QueueSnapshot selected;
+    if (primary != null && backup != null) {
+      selected = primary.revision >= backup.revision ? primary : backup;
+    } else {
+      selected = primary ?? backup!;
+    }
+    _queueCorrupted = false;
+
+    // Repair only a stale or corrupt slot. A read must never replace a newer
+    // recovery copy with an older queue revision.
+    if (primary?.encoded != selected.encoded) {
+      await prefs.setString(_queueKey, selected.encoded);
+    }
+    if (backup?.encoded != selected.encoded) {
+      await prefs.setString(_queueBackupKey, selected.encoded);
+    }
+    return List<QueuedSyncAction>.from(selected.items);
+  }
+
+  _QueueSnapshot? _decodeSnapshot(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
     try {
       final decoded = jsonDecode(raw);
-      if (decoded is! List) {
+      if (decoded is List) {
+        final items = _decodeItems(decoded);
+        if (items == null) return null;
+        return _QueueSnapshot(items: items, revision: 0, encoded: raw);
+      }
+      if (decoded is! Map ||
+          decoded['version'] != _queueFormatVersion ||
+          decoded['revision'] is! int ||
+          (decoded['revision'] as int) < 0 ||
+          decoded['items'] is! List) {
         return null;
       }
-      if (decoded.any((entry) => entry is! Map)) {
-        return null;
-      }
-
-      return decoded
-          .map(
-            (entry) =>
-                QueuedSyncAction.fromJson(Map<String, dynamic>.from(entry)),
-          )
-          .toList();
+      final items = _decodeItems(decoded['items'] as List);
+      if (items == null) return null;
+      return _QueueSnapshot(
+        items: items,
+        revision: decoded['revision'] as int,
+        encoded: raw,
+      );
     } catch (_) {
       return null;
     }
   }
 
+  List<QueuedSyncAction>? _decodeItems(List<dynamic> rawItems) {
+    if (rawItems.length > maxQueueItems ||
+        rawItems.any((entry) => entry is! Map)) {
+      return null;
+    }
+    try {
+      return rawItems
+          .map(
+            (entry) =>
+                QueuedSyncAction.fromJson(Map<String, dynamic>.from(entry as Map)),
+          )
+          .toList(growable: true);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _persistQueue(List<QueuedSyncAction> queue) async {
+    if (queue.length > maxQueueItems) {
+      throw StateError('Coda offline oltre il limite consentito.');
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final primary = _decodeSnapshot(prefs.getString(_queueKey));
+    final backup = _decodeSnapshot(prefs.getString(_queueBackupKey));
+    final revision =
+        math.max(primary?.revision ?? 0, backup?.revision ?? 0) + 1;
+    final encoded = jsonEncode({
+      'version': _queueFormatVersion,
+      'revision': revision,
+      'items': queue.map((entry) => entry.toJson()).toList(growable: false),
+    });
+
+    // Write the recovery slot first. If the process stops between writes, the
+    // next read selects the newer revision and repairs the stale slot.
+    if (!await prefs.setString(_queueBackupKey, encoded)) {
+      throw StateError('Impossibile salvare il backup della coda offline.');
+    }
+    if (!await prefs.setString(_queueKey, encoded)) {
+      throw StateError('Impossibile salvare la coda offline.');
+    }
+  }
+
   Future<void> _replace(String id, QueuedSyncAction updated) =>
       _serialize(() async {
-        final prefs = await SharedPreferences.getInstance();
         final queue = await _loadQueue();
+        var found = false;
         final replaced = queue.map((entry) {
           if (entry.id == id) {
+            found = true;
             return updated;
           }
           return entry;
         }).toList();
-        final encoded = jsonEncode(replaced.map((e) => e.toJson()).toList());
-        await prefs.setString(_queueKey, encoded);
-        await prefs.setString(_queueBackupKey, encoded);
+        if (!found) return;
+        await _persistQueue(replaced);
       });
 }
