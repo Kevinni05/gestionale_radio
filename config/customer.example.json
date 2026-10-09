@@ -1,0 +1,8 @@
+{
+  "API_BASE_URL": "https://operations.example.com",
+  "APP_DISPLAY_NAME": "Customer Operations",
+  "APP_SUBTITLE": "Field Service",
+  "BRAND_LOGO_ASSET": "assets/brand/radiotech-symbol-v1.png",
+  "SUPPORT_EMAIL": "support@example.com",
+  "APP_CHECK_DEBUG": false
+}
