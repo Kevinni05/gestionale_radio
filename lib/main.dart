@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'theme/radiotech_theme.dart';
 import 'theme/radiotech_backdrop.dart';
 import 'services/app_navigation.dart';
+import 'services/app_branding.dart';
 import 'firebase_options.dart';
 import 'login_screen.dart';
 import 'home_screen.dart';
@@ -67,7 +68,7 @@ class GestionaleRadioApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'RadioTech',
+      title: AppBranding.displayName,
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.dark,
       locale: const Locale('it'),
@@ -192,29 +193,29 @@ class _SplashScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: Color(0xFF10111A),
+    return Scaffold(
+      backgroundColor: const Color(0xFF10111A),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            ImageIcon(
+            const ImageIcon(
               AssetImage('assets/brand/radiotech-symbol-v1.png'),
               size: 64,
               color: Color(0xFFE6E6E6),
             ),
-            SizedBox(height: 24),
+            const SizedBox(height: 24),
             Text(
-              'RADIOTECH',
-              style: TextStyle(
+              AppBranding.upperName,
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 20,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 3,
               ),
             ),
-            SizedBox(height: 24),
-            SizedBox(
+            const SizedBox(height: 24),
+            const SizedBox(
               width: 28,
               height: 28,
               child: CircularProgressIndicator(
