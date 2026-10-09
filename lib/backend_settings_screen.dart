@@ -1,8 +1,8 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'services/api_service.dart';
 import 'services/api_endpoint.dart';
 import 'services/api_http_client.dart';
+import 'services/backend_health.dart';
 import 'services/app_navigation.dart';
 import 'theme/radiotech_glass.dart';
 
@@ -36,16 +36,10 @@ class _BackendSettingsScreenState extends State<BackendSettingsScreen> {
           .timeout(const Duration(seconds: 15));
       if (!mounted) return;
 
-      final decoded = jsonDecode(response.body);
-      final health = decoded is Map<String, dynamic>
-          ? decoded
-          : decoded is Map
-          ? Map<String, dynamic>.from(decoded)
-          : null;
-      if (response.statusCode != 200 ||
-          health == null ||
-          health['status'] != 'UP' ||
-          health['service'] != 'radiotech-backend') {
+      if (!BackendHealth.isHealthyRadioTech(
+        statusCode: response.statusCode,
+        body: response.body,
+      )) {
         throw StateError(
           'Il link non identifica un backend RadioTech disponibile.',
         );
