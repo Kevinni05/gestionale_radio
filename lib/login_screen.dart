@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 
 import 'login_scanner.dart';
 import 'services/api_service.dart';
+import 'services/app_branding.dart';
 import 'services/federated_auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -275,7 +276,7 @@ class _LoginScreenState extends State<LoginScreen>
               Expanded(
                 child: Text(
                   'Server Backend API',
-                  style: TextStyle(color: Colors.white, fontSize: 16),
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
                 ),
               ),
             ],
@@ -342,7 +343,7 @@ class _LoginScreenState extends State<LoginScreen>
                               health['service'] != 'radiotech-backend' ||
                               health['status'] != 'UP') {
                             throw const FormatException(
-                              'L’indirizzo non corrisponde a una centrale RadioTech attiva.',
+                              'L’indirizzo non corrisponde a una centrale ${AppBranding.name} attiva.',
                             );
                           }
                           if (!messenger.mounted) return;
@@ -466,7 +467,7 @@ class _LoginScreenState extends State<LoginScreen>
                               const SizedBox(height: 24),
 
                               Text(
-                                '© 2026 Kevin Cagnazzo e Anthony Piccinonno.\nTutti i diritti riservati.',
+                                '© 2026 ${AppBranding.company}.\nTutti i diritti riservati.',
                                 style: TextStyle(
                                   color: Colors.white.withValues(alpha: 0.35),
                                   fontSize: 11,
@@ -514,15 +515,15 @@ class _LoginScreenState extends State<LoginScreen>
             padding: const EdgeInsets.all(10),
             child: Image.asset(
               'assets/brand/radiotech-symbol-v1.png',
-              semanticLabel: 'Logo RadioTech',
+              semanticLabel: 'Logo ${AppBranding.name}',
             ),
           ),
         ),
 
         const SizedBox(height: 20),
 
-        const Text(
-          'RADIOTECH',
+        Text(
+          AppBranding.upperName,
           style: TextStyle(
             color: Colors.white,
             fontSize: 23,
@@ -535,7 +536,7 @@ class _LoginScreenState extends State<LoginScreen>
         const SizedBox(height: 8),
 
         Text(
-          'PIATTAFORMA OPERATIVA',
+          AppBranding.subtitle.toUpperCase(),
           style: TextStyle(
             color: theme.colorScheme.primary,
             fontSize: 11,
