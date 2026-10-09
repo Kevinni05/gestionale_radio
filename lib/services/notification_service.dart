@@ -1,6 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import '../firebase_options.dart';
+import '../config/product_brand.dart';
 import 'personal_badge_cache.dart';
 import 'api_http_client.dart';
 import 'dart:io';
@@ -23,8 +24,13 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
   bool _authListenerRegistered = false;
+  Future<void>? _initialization;
 
-  Future<void> initialize() async {
+  Future<void> initialize() {
+    return _initialization ??= _initialize();
+  }
+
+  Future<void> _initialize() async {
     try {
       await _initializeLocalNotifications();
       await _requestPermission();
@@ -88,9 +94,9 @@ class NotificationService {
           AndroidFlutterLocalNotificationsPlugin
         >();
     await androidPlugin?.createNotificationChannel(
-      const AndroidNotificationChannel(
+      AndroidNotificationChannel(
         'radiotech_alerts',
-        'Alert RadioTech',
+        'Alert ${ProductBrand.appName}',
         description: 'Notifiche operative e task assegnati',
         importance: Importance.max,
       ),
@@ -143,7 +149,7 @@ class NotificationService {
         return;
       }
 
-      debugPrint('FCM token registrato per ${user.uid}');
+      debugPrint('FCM token registrato sul backend.');
     } catch (e) {
       debugPrint('Errore registrazione token FCM: $e');
     }
@@ -178,28 +184,23 @@ class NotificationService {
       return;
     }
     if (message.data['taskId'] != null) AppNavigation.refreshTasks();
-    debugPrint(
-      'Notifica ricevuta in foreground: '
-      '${message.notification?.title}',
-    );
-
-    debugPrint('Payload: ${message.data}');
+    debugPrint('Notifica operativa ricevuta in foreground.');
     final notification = message.notification;
     if (notification != null) {
       _localNotifications.show(
         id: message.hashCode,
-        title: notification.title ?? 'RadioTech',
+        title: notification.title ?? ProductBrand.appName,
         body: notification.body ?? 'Nuova comunicazione operativa',
-        notificationDetails: const NotificationDetails(
+        notificationDetails: NotificationDetails(
           android: AndroidNotificationDetails(
             'radiotech_alerts',
-            'Alert RadioTech',
+            'Alert ${ProductBrand.appName}',
             channelDescription: 'Notifiche operative e task assegnati',
             importance: Importance.max,
             priority: Priority.high,
             icon: '@mipmap/ic_launcher',
           ),
-          iOS: DarwinNotificationDetails(),
+          iOS: const DarwinNotificationDetails(),
         ),
         payload: message.data['taskId'],
       );

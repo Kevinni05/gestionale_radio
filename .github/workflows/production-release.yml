@@ -18,6 +18,10 @@ jobs:
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       ANDROID_EXPECTED_SIGNING_SHA256: ${{ secrets.ANDROID_SIGNING_SHA256 }}
+      MOBILE_API_BASE_URL: ${{ vars.MOBILE_API_BASE_URL || 'https://radiotechwebapp.onrender.com' }}
+      ANDROID_APPLICATION_ID: ${{ vars.ANDROID_APPLICATION_ID || 'com.example.gestionale_radio' }}
+      ANDROID_APP_LABEL: ${{ vars.ANDROID_APP_LABEL || 'RadioTech' }}
+      MOBILE_APP_DISPLAY_NAME: ${{ vars.MOBILE_APP_DISPLAY_NAME || 'RadioTech' }}
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -38,13 +42,13 @@ jobs:
           fs.writeFileSync(store, Buffer.from(process.env.ANDROID_KEYSTORE_BASE64, 'base64'), {mode: 0o600});
           fs.appendFileSync(process.env.GITHUB_ENV, `ANDROID_KEYSTORE_PATH=${store}\n`);
           NODE
-      - run: flutter pub get
+      - run: flutter pub get --enforce-lockfile
       - run: flutter analyze
       - run: flutter test --reporter expanded
       - name: Build production APK and AAB
         run: |
-          flutter build apk --release --dart-define-from-file=config/render.json --obfuscate --split-debug-info=release-symbols
-          flutter build appbundle --release --dart-define-from-file=config/render.json --obfuscate --split-debug-info=release-symbols
+          flutter build apk --release --dart-define=API_BASE_URL="$MOBILE_API_BASE_URL" --dart-define=APP_DISPLAY_NAME="$MOBILE_APP_DISPLAY_NAME" --dart-define=APP_CHECK_DEBUG=false --obfuscate --split-debug-info=release-symbols
+          flutter build appbundle --release --dart-define=API_BASE_URL="$MOBILE_API_BASE_URL" --dart-define=APP_DISPLAY_NAME="$MOBILE_APP_DISPLAY_NAME" --dart-define=APP_CHECK_DEBUG=false --obfuscate --split-debug-info=release-symbols
       - name: Verify APK certificate and prepare release metadata
         run: |
           signer=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n1)
@@ -54,12 +58,14 @@ jobs:
           const report = fs.readFileSync('certificate-report.txt','utf8'), certificate = report.match(/(?:Signer #1|V[234](?:\.\d+)? Signer):? certificate SHA-256 digest: ([a-f0-9]+)/i)?.[1]?.toLowerCase();
           if (certificate !== process.env.ANDROID_EXPECTED_SIGNING_SHA256.toLowerCase() || /Android Debug/i.test(report)) throw new Error('Unexpected signing certificate.');
           const match = fs.readFileSync('pubspec.yaml','utf8').match(/^version:\s*([^+\s]+)\+(\d+)/m);
-          if (!match || Number(match[2]) <= 2020) throw new Error('Release version must increase.');
-          const name = `RadioTech-${match[1]}-${match[2]}`, tag = `v${match[1]}-${match[2]}`;
+          if (!match || Number(match[2]) <= 0) throw new Error('Release versionCode must be positive.');
+          const product = (process.env.MOBILE_APP_DISPLAY_NAME || 'RadioTech').replace(/[^A-Za-z0-9._-]+/g,'-').replace(/^-+|-+$/g,'') || 'mobile';
+          const name = `${product}-${match[1]}-${match[2]}`, tag = `v${match[1]}-${match[2]}`;
           fs.mkdirSync('artifacts',{recursive:true});
           fs.copyFileSync('build/app/outputs/flutter-apk/app-release.apk',`artifacts/${name}.apk`);
           fs.copyFileSync('build/app/outputs/bundle/release/app-release.aab',`artifacts/${name}.aab`);
-          const manifest = {available:false,channel:'GITHUB_RELEASES',applicationId:'com.example.gestionale_radio',versionName:match[1],versionCode:Number(match[2]),signingSha256:certificate,sha256:crypto.createHash('sha256').update(fs.readFileSync(`artifacts/${name}.apk`)).digest('hex'),downloadUrl:`https://github.com/Kevinni05/gestionale_radio/releases/download/${tag}/${name}.apk`};
+          const repoUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}`;
+          const manifest = {available:false,channel:'GITHUB_RELEASES',applicationId:process.env.ANDROID_APPLICATION_ID,versionName:match[1],versionCode:Number(match[2]),signingSha256:certificate,sha256:crypto.createHash('sha256').update(fs.readFileSync(`artifacts/${name}.apk`)).digest('hex'),downloadUrl:`${repoUrl}/releases/download/${tag}/${name}.apk`};
           fs.writeFileSync('artifacts/mobile-release.json',JSON.stringify(manifest,null,2));
           fs.writeFileSync('artifacts/release-notes.md','APK Android firmato di produzione. Report e archivi su Render, stato di connessione e aggiornamenti. Conservare i dati locali prima del passaggio da una build con firma differente.');
           fs.appendFileSync(process.env.GITHUB_ENV,`RELEASE_TAG=${tag}\nRELEASE_NAME=${name}\n`);
@@ -73,7 +79,7 @@ jobs:
       - name: Store signed release
         uses: actions/upload-artifact@v4
         with:
-          name: radiotech-android-production-${{ github.run_id }}
+          name: android-production-${{ github.run_id }}
           path: |
             artifacts/*.apk
             artifacts/*.aab
@@ -96,6 +102,6 @@ jobs:
       - name: Store encrypted symbol files separately
         uses: actions/upload-artifact@v4
         with:
-          name: radiotech-private-symbols-${{ github.run_id }}
+          name: android-private-symbols-${{ github.run_id }}
           path: artifacts/release-symbols.aesgcm
           retention-days: 30

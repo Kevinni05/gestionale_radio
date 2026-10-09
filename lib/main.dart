@@ -1,4 +1,5 @@
 import 'widgets/radiotech_safe_area.dart';
+import 'config/product_brand.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'theme/radiotech_theme.dart';
@@ -32,7 +33,6 @@ Future<void> _initializeApplication() async {
   if (kReleaseMode && const bool.fromEnvironment('APP_CHECK_DEBUG')) {
     throw StateError('App Check debug is forbidden in release builds.');
   }
-  await ApiService.initialize();
   if (Firebase.apps.isEmpty) {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
@@ -55,6 +55,10 @@ Future<void> _initializeApplication() async {
           ),
   );
 
+  // Start API/offline synchronization only after Firebase and App Check are
+  // ready, so queued work never races authentication/bootstrap state.
+  await ApiService.initialize();
+
   unawaited(NotificationService.instance.initialize());
 }
 
@@ -64,7 +68,7 @@ class GestionaleRadioApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'RadioTech',
+      title: ProductBrand.appName,
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.dark,
       locale: const Locale('it'),
@@ -189,29 +193,29 @@ class _SplashScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       backgroundColor: Color(0xFF10111A),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             ImageIcon(
-              AssetImage('assets/brand/radiotech-symbol-v1.png'),
+              AssetImage(ProductBrand.logoAsset),
               size: 64,
               color: Color(0xFFE6E6E6),
             ),
-            SizedBox(height: 24),
+            const SizedBox(height: 24),
             Text(
-              'RADIOTECH',
-              style: TextStyle(
+              ProductBrand.appName.toUpperCase(),
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 20,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 3,
               ),
             ),
-            SizedBox(height: 24),
-            SizedBox(
+            const SizedBox(height: 24),
+            const SizedBox(
               width: 28,
               height: 28,
               child: CircularProgressIndicator(

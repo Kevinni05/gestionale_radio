@@ -1,8 +1,8 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'services/api_service.dart';
 import 'services/api_endpoint.dart';
 import 'services/api_http_client.dart';
+import 'services/backend_health.dart';
 import 'services/app_navigation.dart';
 import 'theme/radiotech_glass.dart';
 
@@ -31,14 +31,17 @@ class _BackendSettingsScreenState extends State<BackendSettingsScreen> {
     });
     try {
       final endpoint = ApiEndpoint.normalize(_url.text);
-      final response = await ApiHttpClient.instance.get(
-        Uri.parse('$endpoint/api/v1/health'),
-      );
+      final response = await ApiHttpClient.instance
+          .get(Uri.parse('$endpoint/api/v1/health'))
+          .timeout(const Duration(seconds: 15));
       if (!mounted) return;
-      if (response.statusCode != 200 ||
-          jsonDecode(response.body)['status'] != 'UP') {
+
+      if (!BackendHealth.isHealthyRadioTech(
+        statusCode: response.statusCode,
+        body: response.body,
+      )) {
         throw StateError(
-          'Il server non risponde correttamente. Verifica il link.',
+          'Il link non identifica un backend RadioTech disponibile.',
         );
       }
       ApiService.baseUrl = endpoint;

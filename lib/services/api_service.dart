@@ -972,7 +972,9 @@ class ApiService {
             taskId.isEmpty ||
             status == null ||
             status.isEmpty) {
-          throw ArgumentError('Task e stato mancanti nella coda offline.');
+          throw const PermanentSyncFailure(
+            'Task e stato mancanti nella coda offline.',
+          );
         }
         await updateTaskStatus(taskId, status, idempotencyKey: idempotencyKey);
         break;
@@ -1009,7 +1011,9 @@ class ApiService {
             expectedTenantId: payload['tenantId']?.toString(),
           );
         } else {
-          throw ArgumentError('Report mancante nella coda offline.');
+          throw const PermanentSyncFailure(
+            'Report mancante nella coda offline.',
+          );
         }
         break;
       case 'task_check_in':
@@ -1024,7 +1028,7 @@ class ApiService {
             latitude is! num ||
             longitude is! num ||
             accuracy is! num) {
-          throw ArgumentError(
+          throw const PermanentSyncFailure(
             'Task e coordinate mancanti nella coda check-in.',
           );
         }
@@ -1048,7 +1052,7 @@ class ApiService {
             latitude is! num ||
             longitude is! num ||
             accuracy is! num) {
-          throw ArgumentError(
+          throw const PermanentSyncFailure(
             'Task e coordinate mancanti nella coda check-out.',
           );
         }
@@ -1061,7 +1065,7 @@ class ApiService {
         );
         break;
       default:
-        throw UnsupportedError(
+        throw PermanentSyncFailure(
           'Azione sincronizzazione non supportata: $action',
         );
     }
