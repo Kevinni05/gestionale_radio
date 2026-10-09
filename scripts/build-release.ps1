@@ -70,5 +70,6 @@ if ($LASTEXITCODE -ne 0) { throw 'Signed release build failed.' }
 
 Write-Output 'Signed AAB: build/app/outputs/bundle/release/app-release.aab'
 Write-Output "Product: $AppName"
-Write-Output "Android application ID: $($env:ANDROID_APPLICATION_ID ?? 'com.example.gestionale_radio')"
+$effectiveApplicationId = if ($env:ANDROID_APPLICATION_ID) { $env:ANDROID_APPLICATION_ID } else { 'com.example.gestionale_radio' }
+Write-Output "Android application ID: $effectiveApplicationId"
 Write-Output 'Store release-symbols privately alongside the exact build number.'
