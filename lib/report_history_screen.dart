@@ -10,6 +10,7 @@ import 'theme/radiotech_content.dart';
 import 'ai_hub_screen.dart' show CompanyRequest;
 import 'models/task_summary.dart';
 import 'services/app_navigation.dart';
+import 'services/app_branding.dart';
 
 class OperatorHistoryScreen extends StatefulWidget {
   const OperatorHistoryScreen({
@@ -415,7 +416,7 @@ class _ReportFileScreenState extends State<ReportFileScreen> {
             build: (_) async => bytes,
             canChangeOrientation: false,
             canChangePageFormat: false,
-            pdfFileName: 'Report-RadioTech.pdf',
+            pdfFileName: 'Report-${AppBranding.assetPrefix}.pdf',
           );
         }
         return InteractiveViewer(
