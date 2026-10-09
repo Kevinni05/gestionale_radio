@@ -46,7 +46,7 @@ jobs:
           fi
 
       - name: Install Flutter dependencies
-        run: flutter pub get --enforce-lockfile --enforce-lockfile
+        run: flutter pub get --enforce-lockfile
 
       - name: Analyze Flutter project
         run: flutter analyze
@@ -141,7 +141,7 @@ jobs:
 
       - name: Install Flutter dependencies
         if: steps.distribution-config.outputs.enabled == 'true'
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Build signed production APK
         if: steps.distribution-config.outputs.enabled == 'true'
