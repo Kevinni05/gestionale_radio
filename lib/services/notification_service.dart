@@ -1,6 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import '../firebase_options.dart';
+import '../config/product_brand.dart';
 import 'personal_badge_cache.dart';
 import 'api_http_client.dart';
 import 'dart:io';
@@ -93,9 +94,9 @@ class NotificationService {
           AndroidFlutterLocalNotificationsPlugin
         >();
     await androidPlugin?.createNotificationChannel(
-      const AndroidNotificationChannel(
+      AndroidNotificationChannel(
         'radiotech_alerts',
-        'Alert RadioTech',
+        'Alert ${ProductBrand.appName}',
         description: 'Notifiche operative e task assegnati',
         importance: Importance.max,
       ),
@@ -188,18 +189,18 @@ class NotificationService {
     if (notification != null) {
       _localNotifications.show(
         id: message.hashCode,
-        title: notification.title ?? 'RadioTech',
+        title: notification.title ?? ProductBrand.appName,
         body: notification.body ?? 'Nuova comunicazione operativa',
-        notificationDetails: const NotificationDetails(
+        notificationDetails: NotificationDetails(
           android: AndroidNotificationDetails(
             'radiotech_alerts',
-            'Alert RadioTech',
+            'Alert ${ProductBrand.appName}',
             channelDescription: 'Notifiche operative e task assegnati',
             importance: Importance.max,
             priority: Priority.high,
             icon: '@mipmap/ic_launcher',
           ),
-          iOS: DarwinNotificationDetails(),
+          iOS: const DarwinNotificationDetails(),
         ),
         payload: message.data['taskId'],
       );
