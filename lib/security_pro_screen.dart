@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'services/api_service.dart';
 import 'services/session_service.dart';
+import 'services/app_branding.dart';
 
 class SecurityProScreen extends StatefulWidget {
   const SecurityProScreen({super.key});
@@ -87,7 +88,7 @@ class _SecurityProScreenState extends State<SecurityProScreen> {
       secret,
       otp,
     );
-    await user.multiFactor.enroll(assertion, displayName: 'RadioTech TOTP');
+    await user.multiFactor.enroll(assertion, displayName: '${AppBranding.name} TOTP');
   }
 
   @override
