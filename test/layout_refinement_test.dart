@@ -114,7 +114,7 @@ void main() {
           theme: RadioTechTheme.dark,
           home: OperatorHistoryScreen(
             request: (path, {method = 'GET', body}) async =>
-                path.endsWith('/reports')
+                path.contains('/reports')
                 ? [
                     {
                       'id': 'r1',

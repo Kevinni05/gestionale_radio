@@ -207,6 +207,15 @@ class ApiService {
     );
   }
 
+  Future<int> getMyReportCount() async {
+    final response = await _client.get(
+      Uri.parse(_apiV1('/operator/me/reports/count')),
+      headers: await _headers,
+    );
+    _check(response, 'Impossibile contare i report.');
+    return (_data(response)['count'] as num).toInt();
+  }
+
   Future<List<Map<String, dynamic>>> getMyReports() async {
     final response = await _client.get(
       Uri.parse(_apiV1('/operator/me/reports')),

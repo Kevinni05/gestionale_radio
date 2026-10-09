@@ -1,0 +1,101 @@
+name: Signed Android production release
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the verified APK as a public GitHub release
+        type: boolean
+        default: false
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      ANDROID_EXPECTED_SIGNING_SHA256: ${{ secrets.ANDROID_SIGNING_SHA256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.44.9'
+          cache: true
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Prepare private signing identity
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs'), path = require('node:path');
+          if (!process.env.ANDROID_KEYSTORE_BASE64 || !process.env.ANDROID_KEYSTORE_PASSWORD || !process.env.ANDROID_KEY_ALIAS || !process.env.ANDROID_KEY_PASSWORD || !/^[a-f0-9]{64}$/i.test(process.env.ANDROID_EXPECTED_SIGNING_SHA256 || '')) throw new Error('Production signing secrets are missing.');
+          const store = path.join(process.env.RUNNER_TEMP, 'radiotech-production.p12');
+          fs.writeFileSync(store, Buffer.from(process.env.ANDROID_KEYSTORE_BASE64, 'base64'), {mode: 0o600});
+          fs.appendFileSync(process.env.GITHUB_ENV, `ANDROID_KEYSTORE_PATH=${store}\n`);
+          NODE
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test --reporter expanded
+      - name: Build production APK and AAB
+        run: |
+          flutter build apk --release --dart-define-from-file=config/render.json --obfuscate --split-debug-info=release-symbols
+          flutter build appbundle --release --dart-define-from-file=config/render.json --obfuscate --split-debug-info=release-symbols
+      - name: Verify APK certificate and prepare release metadata
+        run: |
+          signer=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n1)
+          "$signer" verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk > certificate-report.txt
+          node - <<'NODE'
+          const fs = require('node:fs'), crypto = require('node:crypto');
+          const report = fs.readFileSync('certificate-report.txt','utf8'), certificate = report.match(/Signer #1 certificate SHA-256 digest: ([a-f0-9]+)/i)?.[1]?.toLowerCase();
+          if (certificate !== process.env.ANDROID_EXPECTED_SIGNING_SHA256.toLowerCase() || /Android Debug/i.test(report)) throw new Error('Unexpected signing certificate.');
+          const match = fs.readFileSync('pubspec.yaml','utf8').match(/^version:\s*([^+\s]+)\+(\d+)/m);
+          if (!match || Number(match[2]) <= 2020) throw new Error('Release version must increase.');
+          const name = `RadioTech-${match[1]}-${match[2]}`, tag = `v${match[1]}-${match[2]}`;
+          fs.mkdirSync('artifacts',{recursive:true});
+          fs.copyFileSync('build/app/outputs/flutter-apk/app-release.apk',`artifacts/${name}.apk`);
+          fs.copyFileSync('build/app/outputs/bundle/release/app-release.aab',`artifacts/${name}.aab`);
+          const manifest = {available:false,channel:'GITHUB_RELEASES',applicationId:'com.example.gestionale_radio',versionName:match[1],versionCode:Number(match[2]),signingSha256:certificate,sha256:crypto.createHash('sha256').update(fs.readFileSync(`artifacts/${name}.apk`)).digest('hex'),downloadUrl:`https://github.com/Kevinni05/gestionale_radio/releases/download/${tag}/${name}.apk`};
+          fs.writeFileSync('artifacts/mobile-release.json',JSON.stringify(manifest,null,2));
+          fs.writeFileSync('artifacts/release-notes.md','APK Android firmato di produzione. Report e archivi su Render, stato di connessione e aggiornamenti. Conservare i dati locali prima del passaggio da una build con firma differente.');
+          fs.appendFileSync(process.env.GITHUB_ENV,`RELEASE_TAG=${tag}\nRELEASE_NAME=${name}\n`);
+          NODE
+      - name: Publish verified Android release when explicitly requested
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title "$RELEASE_NAME" --notes-file artifacts/release-notes.md "artifacts/$RELEASE_NAME.apk" "artifacts/$RELEASE_NAME.aab" artifacts/mobile-release.json
+      - name: Store signed release
+        uses: actions/upload-artifact@v4
+        with:
+          name: radiotech-android-production-${{ github.run_id }}
+          path: |
+            artifacts/*.apk
+            artifacts/*.aab
+            artifacts/mobile-release.json
+            certificate-report.txt
+          retention-days: 30
+      - name: Encrypt symbol files before offsite storage
+        env:
+          SYMBOLS_KEY_BASE64: ${{ secrets.ANDROID_SYMBOLS_KEY_BASE64 }}
+        run: |
+          tar -czf "$RUNNER_TEMP/release-symbols.tgz" release-symbols
+          node - <<'NODE'
+          const fs = require('node:fs'), crypto = require('node:crypto'), path = require('node:path');
+          const key = Buffer.from(process.env.SYMBOLS_KEY_BASE64 || '', 'base64');
+          if (key.length !== 32) throw new Error('A dedicated symbols encryption key is required.');
+          const nonce = crypto.randomBytes(12), cipher = crypto.createCipheriv('aes-256-gcm', key, nonce);
+          const encrypted = Buffer.concat([cipher.update(fs.readFileSync(path.join(process.env.RUNNER_TEMP, 'release-symbols.tgz'))), cipher.final()]);
+          fs.writeFileSync('artifacts/release-symbols.aesgcm', Buffer.concat([nonce, cipher.getAuthTag(), encrypted]));
+          NODE
+      - name: Store encrypted symbol files separately
+        uses: actions/upload-artifact@v4
+        with:
+          name: radiotech-private-symbols-${{ github.run_id }}
+          path: artifacts/release-symbols.aesgcm
+          retention-days: 30

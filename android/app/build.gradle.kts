@@ -1,4 +1,5 @@
 import java.util.Properties
+import java.io.File
 
 plugins {
     id("com.android.application")
@@ -10,10 +11,20 @@ plugins {
 }
 
 val releaseKeys = Properties()
-val releaseKeyFile = rootProject.file("key.properties")
+val privateReleaseKeyFile = File(System.getProperty("user.home"), ".radiotech/signing/key.properties")
+val releaseKeyFile = System.getenv("ANDROID_KEY_PROPERTIES_PATH")?.let { file(it) }
+    ?: rootProject.file("key.properties").takeIf { it.exists() } ?: privateReleaseKeyFile
 if (releaseKeyFile.exists()) releaseKeyFile.inputStream().use { releaseKeys.load(it) }
 fun releaseKey(name: String, env: String): String? = System.getenv(env) ?: releaseKeys.getProperty(name)
 val releaseStore = releaseKey("storeFile", "ANDROID_KEYSTORE_PATH")
+
+gradle.taskGraph.whenReady {
+    if (allTasks.any { it.name == "assembleRelease" || it.name == "bundleRelease" }) {
+        require(!releaseStore.isNullOrBlank() && file(releaseStore!!).isFile) {
+            "Production builds require the existing configured keystore; unsigned releases are forbidden."
+        }
+    }
+}
 
 android {
     namespace = "com.example.gestionale_radio"

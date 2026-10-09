@@ -15,7 +15,7 @@ void main() {
         MaterialApp(
           home: OperatorHistoryScreen(
             request: (path, {method = 'GET', body}) async {
-              if (path.endsWith('/tasks')) throw StateError('Server in avvio');
+              if (path.contains('/tasks')) throw StateError('Server in avvio');
               return [
                 {
                   'id': 'report',
@@ -47,7 +47,7 @@ void main() {
         MaterialApp(
           home: OperatorHistoryScreen(
             request: (path, {method = 'GET', body}) async =>
-                path.endsWith('/tasks')
+                path.contains('/tasks')
                 ? []
                 : [
                     {

@@ -32,6 +32,8 @@ migrate_working_dir/
 .pub/
 /build/
 /artifacts/*.apk
+/artifacts/*.aab
+/artifacts/signing-backup*
 /coverage/
 
 # Symbolication related
@@ -45,6 +47,7 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 /android/key.properties
+/android/.kotlin/
 *.jks
 *.keystore
 config/production.json

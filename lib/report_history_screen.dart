@@ -10,6 +10,7 @@ import 'theme/radiotech_content.dart';
 import 'ai_hub_screen.dart' show CompanyRequest;
 import 'models/task_summary.dart';
 import 'services/app_navigation.dart';
+import 'models/archive_page.dart';
 
 class OperatorHistoryScreen extends StatefulWidget {
   const OperatorHistoryScreen({
@@ -31,6 +32,12 @@ class _OperatorHistoryScreenState extends State<OperatorHistoryScreen>
   final _search = TextEditingController();
   final _documents = <String, Future<Uint8List>>{};
   final _busy = <String>{};
+  final _loadedReports = <String, Map>{}, _loadedTasks = <String, Map>{};
+  String? _reportCursor, _taskCursor;
+  bool _taskLookupFailed = false, _loadingMore = false;
+  int _loadGeneration = 0;
+  bool get _hasMore =>
+      _reportCursor != null || _taskCursor != null || _taskLookupFailed;
   @override
   void initState() {
     super.initState();
@@ -47,28 +54,61 @@ class _OperatorHistoryScreenState extends State<OperatorHistoryScreen>
     if (state == AppLifecycleState.resumed) _refreshHistory();
   }
 
-  Future<List<Map>> _load() async {
+  Future<List<Map>> _load({bool append = false}) async {
     final request = widget.request ?? CompanyApi.instance.request;
-    Future<dynamic> loadTasks() async {
+    final generation = _loadGeneration;
+    String path(String resource, String? cursor) => Uri(
+      path: '/operator/me/$resource/page',
+      queryParameters: {
+        'limit': '30',
+        if (append && cursor != null) 'cursor': cursor,
+      },
+    ).toString();
+    Future<ArchivePage?> loadTasks() async {
+      if (append && _taskCursor == null && !_taskLookupFailed) {
+        return const ArchivePage([], null);
+      }
       try {
-        return await request('/operator/me/tasks');
+        return ArchivePage.parse(await request(path('tasks', _taskCursor)));
       } catch (_) {
-        return <dynamic>[];
+        return null;
       }
     }
 
     final results = await Future.wait([
-      request('/operator/me/reports'),
+      append && _reportCursor == null
+          ? Future.value(const ArchivePage([], null))
+          : request(path('reports', _reportCursor)).then(ArchivePage.parse),
       // Reports remain accessible even when the supplementary task lookup fails.
       loadTasks(),
     ]);
-    dynamic unwrap(dynamic v) => v is Map ? v['data'] : v;
-    final tasks = {
-      for (final t in (unwrap(results[1]) as List? ?? []).cast<Map>())
-        t['id'].toString(): t,
-    };
+    if (generation != _loadGeneration) return _mergeRecords();
+    final reportPage = results[0]!;
+    final taskPage = results[1];
+    if (!append) {
+      _loadedReports.clear();
+      _loadedTasks.clear();
+    }
+    for (final report in reportPage.items) {
+      _loadedReports[report['id'].toString()] = report;
+    }
+    if (taskPage != null) {
+      for (final task in taskPage.items) {
+        _loadedTasks[task['id'].toString()] = task;
+      }
+    }
+    _reportCursor = reportPage.nextCursor;
+    _taskCursor =
+        taskPage?.nextCursor ??
+        (append && taskPage == null ? _taskCursor : null);
+    _taskLookupFailed = taskPage == null;
+    return _mergeRecords();
+  }
+
+  List<Map> _mergeRecords() {
+    final tasks = _loadedTasks;
     final records = <String, Map>{};
-    final reports = (unwrap(results[0]) as List? ?? []).cast<Map>().toList()
+    final reports = _loadedReports.values.toList()
       ..sort((a, b) => _time(b).compareTo(_time(a)));
     for (final report in reports) {
       final task = tasks[report['taskId']?.toString()];
@@ -127,15 +167,41 @@ class _OperatorHistoryScreenState extends State<OperatorHistoryScreen>
   }
 
   Future<void> _reload() async {
+    _loadGeneration++;
     _documents.clear();
     final future = _load();
     setState(() {
+      _loadingMore = false;
       _reports = future;
     });
     try {
       await _reports;
     } catch (_) {
       /* FutureBuilder displays the failure. */
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore) return;
+    final generation = _loadGeneration;
+    setState(() => _loadingMore = true);
+    try {
+      final records = await _load(append: true);
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _reports = Future.value(records));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Altri interventi non disponibili. Riprova.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _loadingMore = false);
+      }
     }
   }
 
@@ -246,7 +312,7 @@ class _OperatorHistoryScreenState extends State<OperatorHistoryScreen>
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Consulta il riepilogo e salva il solo PDF dell’intervento.',
+                  'Consulta il riepilogo e salva il PDF. La ricerca riguarda gli interventi caricati.',
                 ),
                 const SizedBox(height: 20),
                 TextField(
@@ -337,6 +403,23 @@ class _OperatorHistoryScreenState extends State<OperatorHistoryScreen>
                           ),
                         ],
                       ),
+                    ),
+                  ),
+                if (_hasMore)
+                  OutlinedButton.icon(
+                    key: const ValueKey('history-load-more'),
+                    onPressed: _loadingMore ? null : _loadMore,
+                    icon: _loadingMore
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.expand_more),
+                    label: Text(
+                      _taskLookupFailed && _reportCursor == null
+                          ? 'Riprova caricamento incarichi'
+                          : 'Carica altri interventi',
                     ),
                   ),
               ],

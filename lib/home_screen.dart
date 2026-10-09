@@ -18,6 +18,8 @@ import 'services/api_service.dart';
 import 'services/offline_sync_service.dart';
 import 'services/session_service.dart';
 import 'widgets/offline_sync_status_panel.dart';
+import 'widgets/api_connection_badge.dart';
+import 'widgets/android_update_button.dart';
 import 'tasks_screen.dart';
 import 'services/app_navigation.dart';
 import 'ai_hub_screen.dart';
@@ -110,13 +112,13 @@ class _HomeScreenState extends State<HomeScreen>
   late final Animation<double> _pulse;
   int _syncRefreshToken = 0;
   late Future<List<Map<String, dynamic>>> _tasks;
-  late Future<List<Map<String, dynamic>>> _reports;
+  late Future<int> _reports;
 
   void _refreshTasks() {
     if (mounted) {
       setState(() {
         _tasks = ApiService.instance.getMyTasks();
-        _reports = ApiService.instance.getMyReports();
+        _reports = ApiService.instance.getMyReportCount();
       });
     }
   }
@@ -126,7 +128,7 @@ class _HomeScreenState extends State<HomeScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _tasks = ApiService.instance.getMyTasks();
-    _reports = ApiService.instance.getMyReports();
+    _reports = ApiService.instance.getMyReportCount();
     AppNavigation.requestedTask.addListener(_openRequestedTask);
     AppNavigation.tasksRevision.addListener(_refreshTasks);
     WidgetsBinding.instance.addPostFrameCallback((_) => _openRequestedTask());
@@ -218,6 +220,7 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
 
                         OfflineSyncStatusPanel(refreshToken: _syncRefreshToken),
+                        const AndroidUpdateButton(),
 
                         const SizedBox(height: 24),
 
@@ -504,11 +507,11 @@ class _HomeScreenState extends State<HomeScreen>
   // ==========================================================
 
   Widget _buildHero(BuildContext context) {
-    return FutureBuilder<List<Map<String, dynamic>>>(
+    return FutureBuilder<int>(
       future: _reports,
       builder: (context, reportSnapshot) {
         final completedReports = reportSnapshot.hasData
-            ? reportSnapshot.data!.length.toString()
+            ? reportSnapshot.data!.toString()
             : '—';
 
         return FutureBuilder<List<Map<String, dynamic>>>(
@@ -693,30 +696,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _onlineBadge() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: AppColors.green.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.green.withValues(alpha: 0.20)),
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.circle, size: 7, color: AppColors.green),
-          SizedBox(width: 6),
-          Text(
-            'ONLINE',
-            style: TextStyle(
-              color: AppColors.green,
-              fontSize: 9,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1,
-            ),
-          ),
-        ],
-      ),
-    );
+    return const ApiConnectionBadge();
   }
 
   Widget _buildKpi({
