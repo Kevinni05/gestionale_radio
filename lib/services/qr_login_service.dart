@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import 'app_branding.dart';
+
 class QrLoginFailure implements Exception {
   const QrLoginFailure(this.message, {this.connection = false});
   final String message;
@@ -100,9 +102,9 @@ class QrLoginService {
     try {
       decoded = jsonDecode(response.body);
     } on FormatException {
-      throw const QrLoginFailure(
+      throw QrLoginFailure(
         'Il server non restituisce una risposta '
-        'RadioTech valida. Controlla l’indirizzo del backend.',
+        '${AppBranding.name} valida. Controlla l’indirizzo del backend.',
         connection: true,
       );
     }
