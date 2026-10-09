@@ -1,4 +1,11 @@
 {
   "API_BASE_URL": "https://api.example.invalid",
-  "APP_CHECK_DEBUG": false
+  "APP_CHECK_DEBUG": false,
+  "APP_NAME": "RadioTech",
+  "APP_DISPLAY_NAME": "RadioTech",
+  "APP_SUBTITLE": "Gestione operativa",
+  "APP_COMPANY": "RadioTech",
+  "APP_SUPPORT_EMAIL": "",
+  "APP_PDF_BRAND": "RadioTech Operations Suite",
+  "APP_ASSET_PREFIX": "RadioTech"
 }
