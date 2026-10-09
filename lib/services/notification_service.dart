@@ -12,6 +12,7 @@ import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'auth_service.dart';
 import 'api_service.dart';
+import 'app_branding.dart';
 import 'app_navigation.dart';
 
 class NotificationService {
@@ -95,7 +96,7 @@ class NotificationService {
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
         'radiotech_alerts',
-        'Alert RadioTech',
+        'Alert ${AppBranding.name}',
         description: 'Notifiche operative e task assegnati',
         importance: Importance.max,
       ),
@@ -188,7 +189,7 @@ class NotificationService {
     if (notification != null) {
       _localNotifications.show(
         id: message.hashCode,
-        title: notification.title ?? 'RadioTech',
+        title: notification.title ?? AppBranding.name,
         body: notification.body ?? 'Nuova comunicazione operativa',
         notificationDetails: const NotificationDetails(
           android: AndroidNotificationDetails(
