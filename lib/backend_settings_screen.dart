@@ -31,14 +31,23 @@ class _BackendSettingsScreenState extends State<BackendSettingsScreen> {
     });
     try {
       final endpoint = ApiEndpoint.normalize(_url.text);
-      final response = await ApiHttpClient.instance.get(
-        Uri.parse('$endpoint/api/v1/health'),
-      );
+      final response = await ApiHttpClient.instance
+          .get(Uri.parse('$endpoint/api/v1/health'))
+          .timeout(const Duration(seconds: 15));
       if (!mounted) return;
+
+      final decoded = jsonDecode(response.body);
+      final health = decoded is Map<String, dynamic>
+          ? decoded
+          : decoded is Map
+          ? Map<String, dynamic>.from(decoded)
+          : null;
       if (response.statusCode != 200 ||
-          jsonDecode(response.body)['status'] != 'UP') {
+          health == null ||
+          health['status'] != 'UP' ||
+          health['service'] != 'radiotech-backend') {
         throw StateError(
-          'Il server non risponde correttamente. Verifica il link.',
+          'Il link non identifica un backend RadioTech disponibile.',
         );
       }
       ApiService.baseUrl = endpoint;
