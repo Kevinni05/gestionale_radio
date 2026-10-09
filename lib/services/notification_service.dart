@@ -12,6 +12,7 @@ import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'auth_service.dart';
 import 'api_service.dart';
+import 'app_branding.dart';
 import 'app_navigation.dart';
 
 class NotificationService {
@@ -23,8 +24,13 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
   bool _authListenerRegistered = false;
+  Future<void>? _initialization;
 
-  Future<void> initialize() async {
+  Future<void> initialize() {
+    return _initialization ??= _initialize();
+  }
+
+  Future<void> _initialize() async {
     try {
       await _initializeLocalNotifications();
       await _requestPermission();
@@ -90,7 +96,7 @@ class NotificationService {
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
         'radiotech_alerts',
-        'Alert RadioTech',
+        'Alert ${AppBranding.name}',
         description: 'Notifiche operative e task assegnati',
         importance: Importance.max,
       ),
@@ -143,7 +149,7 @@ class NotificationService {
         return;
       }
 
-      debugPrint('FCM token registrato per ${user.uid}');
+      debugPrint('FCM token registrato sul backend.');
     } catch (e) {
       debugPrint('Errore registrazione token FCM: $e');
     }
@@ -178,17 +184,12 @@ class NotificationService {
       return;
     }
     if (message.data['taskId'] != null) AppNavigation.refreshTasks();
-    debugPrint(
-      'Notifica ricevuta in foreground: '
-      '${message.notification?.title}',
-    );
-
-    debugPrint('Payload: ${message.data}');
+    debugPrint('Notifica operativa ricevuta in foreground.');
     final notification = message.notification;
     if (notification != null) {
       _localNotifications.show(
         id: message.hashCode,
-        title: notification.title ?? 'RadioTech',
+        title: notification.title ?? AppBranding.name,
         body: notification.body ?? 'Nuova comunicazione operativa',
         notificationDetails: const NotificationDetails(
           android: AndroidNotificationDetails(
