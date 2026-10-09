@@ -1,4 +1,5 @@
 import 'widgets/radiotech_safe_area.dart';
+import 'config/product_brand.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'theme/radiotech_theme.dart';
@@ -67,7 +68,7 @@ class GestionaleRadioApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'RadioTech',
+      title: ProductBrand.appName,
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.dark,
       locale: const Locale('it'),
@@ -199,13 +200,13 @@ class _SplashScreen extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             ImageIcon(
-              AssetImage('assets/brand/radiotech-symbol-v1.png'),
+              AssetImage(ProductBrand.logoAsset),
               size: 64,
               color: Color(0xFFE6E6E6),
             ),
             SizedBox(height: 24),
             Text(
-              'RADIOTECH',
+              ProductBrand.appName.toUpperCase(),
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 20,
