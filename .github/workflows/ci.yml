@@ -13,8 +13,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  flutter:
-    name: Flutter checks
+  quality:
+    name: Flutter analyze and tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -26,13 +26,6 @@ jobs:
           channel: stable
           flutter-version: '3.44.9'
           cache: true
-
-      - name: Set up Java and Gradle cache
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-          cache: gradle
 
       - name: Reject tracked private key material
         shell: bash
@@ -54,6 +47,30 @@ jobs:
       - name: Run Flutter tests
         run: flutter test --reporter expanded
 
+  android-qa:
+    name: Android QA compile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.44.9'
+          cache: true
+
+      - name: Set up Java and Gradle cache
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Install Flutter dependencies
+        run: flutter pub get --enforce-lockfile
+
       - name: Compile Android QA application
         run: flutter build apk --debug --no-pub --target-platform android-arm64 --dart-define-from-file=config/render.json
 
@@ -62,12 +79,12 @@ jobs:
         with:
           name: radiotech-android-qa
           path: build/app/outputs/flutter-apk/app-debug.apk
-          retention-days: 14
+          retention-days: 7
 
 
   distribute-android:
     name: Distribute Android to Firebase
-    needs: flutter
+    needs: [quality, android-qa]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
