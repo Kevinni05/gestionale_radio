@@ -1,3 +1,4 @@
+import 'app_branding.dart';
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -36,7 +37,7 @@ class MaintenanceReportPdf {
     final document = pw.Document(
       title: 'Rapporto di manutenzione - $antennaName',
       author: operatorName,
-      creator: 'RadioTech Operations Suite',
+      creator: AppBranding.pdfBrand,
     );
     const ink = PdfColor.fromInt(0xff182333);
     const muted = PdfColor.fromInt(0xff596575);
@@ -94,7 +95,7 @@ class MaintenanceReportPdf {
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
                     pw.Text(
-                      'RADIOTECH',
+                      AppBranding.upperName,
                       style: pw.TextStyle(
                         fontSize: 19,
                         fontWeight: pw.FontWeight.bold,
@@ -120,7 +121,7 @@ class MaintenanceReportPdf {
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
               pw.Text(
-                'RadioTech | Documentazione intervento',
+                '${AppBranding.name} | Documentazione intervento',
                 style: const pw.TextStyle(fontSize: 8, color: muted),
               ),
               pw.Text(
