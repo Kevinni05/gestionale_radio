@@ -6,6 +6,7 @@ import 'package:gal/gal.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/company_api.dart';
 import '../services/personal_badge_cache.dart';
+import '../services/app_branding.dart';
 import '../ai_hub_screen.dart' show CompanyRequest;
 
 /// Polling plus document invalidation keeps the badge current while connected;
@@ -88,7 +89,7 @@ class _PersonalBadgeState extends State<PersonalBadge>
       base64Decode((_badge!['imageDataUrl'] as String).split(',').last);
   Future<void> _save() async {
     try {
-      await Gal.putImageBytes(_png, name: 'RadioTech-badge');
+      await Gal.putImageBytes(_png, name: '${AppBranding.assetPrefix}-badge');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
