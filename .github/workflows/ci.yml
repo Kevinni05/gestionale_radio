@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -26,6 +26,13 @@ jobs:
           channel: stable
           flutter-version: '3.44.9'
           cache: true
+
+      - name: Set up Java and Gradle cache
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
 
       - name: Reject tracked private key material
         shell: bash
@@ -39,7 +46,7 @@ jobs:
           fi
 
       - name: Install Flutter dependencies
-        run: flutter pub get --enforce-lockfile
+        run: flutter pub get --enforce-lockfile --enforce-lockfile
 
       - name: Analyze Flutter project
         run: flutter analyze
@@ -47,14 +54,8 @@ jobs:
       - name: Run Flutter tests
         run: flutter test --reporter expanded
 
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
       - name: Compile Android QA application
-        run: flutter build apk --debug --dart-define-from-file=config/render.json
+        run: flutter build apk --debug --no-pub --target-platform android-arm64 --dart-define-from-file=config/render.json
 
       - name: Store QA artifact
         uses: actions/upload-artifact@v4
@@ -80,7 +81,7 @@ jobs:
       MOBILE_APP_DISPLAY_NAME: ${{ vars.MOBILE_APP_DISPLAY_NAME || 'RadioTech' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Check distribution configuration
         id: distribution-config
@@ -114,10 +115,11 @@ jobs:
 
       - name: Set up Java
         if: steps.distribution-config.outputs.enabled == 'true'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
       - name: Restore stable Android signing key
         if: steps.distribution-config.outputs.enabled == 'true'
@@ -147,7 +149,7 @@ jobs:
         run: |
           set -euo pipefail
           BUILD_NUMBER=$((10000 + GITHUB_RUN_NUMBER))
-          flutter build apk --release \
+          flutter build apk --release --no-pub \
             --build-number="$BUILD_NUMBER" \
             --dart-define=API_BASE_URL="$MOBILE_API_BASE_URL" \
             --dart-define=APP_DISPLAY_NAME="$MOBILE_APP_DISPLAY_NAME" \
@@ -167,7 +169,7 @@ jobs:
 
       - name: Install Firebase CLI
         if: steps.distribution-config.outputs.enabled == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
 
