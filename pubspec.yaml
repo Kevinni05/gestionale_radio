@@ -80,7 +80,7 @@ flutter:
   # the material Icons class.
   uses-material-design: true
   assets:
-    - assets/brand/radiotech-symbol-v1.png
+    - assets/brand/
   fonts:
     - family: Inter
       fonts:
