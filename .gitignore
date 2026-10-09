@@ -31,9 +31,7 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
-/artifacts/*.apk
-/artifacts/*.aab
-/artifacts/signing-backup*
+/artifacts/
 /coverage/
 
 # Symbolication related
