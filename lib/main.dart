@@ -32,7 +32,6 @@ Future<void> _initializeApplication() async {
   if (kReleaseMode && const bool.fromEnvironment('APP_CHECK_DEBUG')) {
     throw StateError('App Check debug is forbidden in release builds.');
   }
-  await ApiService.initialize();
   if (Firebase.apps.isEmpty) {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
@@ -54,6 +53,10 @@ Future<void> _initializeApplication() async {
             const String.fromEnvironment('APP_CHECK_WEB_SITE_KEY'),
           ),
   );
+
+  // Start API/offline synchronization only after Firebase and App Check are
+  // ready, so queued work never races authentication/bootstrap state.
+  await ApiService.initialize();
 
   unawaited(NotificationService.instance.initialize());
 }
