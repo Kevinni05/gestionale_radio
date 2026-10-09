@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -180,6 +181,131 @@ void main() {
       expect(pending.single.action, 'task_status_update');
     },
   );
+
+  test(
+    'newer backup revision wins and repairs a stale primary queue',
+    () async {
+      final service = OfflineSyncService.instance;
+      await service.clear();
+      final prefs = await SharedPreferences.getInstance();
+      final primary = {
+        'version': 2,
+        'revision': 3,
+        'items': [
+          {
+            'id': 'old_action',
+            'action': 'task_status_update',
+            'payload': {'id': 'old-task'},
+            'createdAt': '2026-10-08T10:00:00Z',
+            'retryCount': 0,
+            'nextAttemptAt': null,
+            'lastError': null,
+            'failed': false,
+          },
+        ],
+      };
+      final backup = {
+        'version': 2,
+        'revision': 4,
+        'items': [
+          {
+            'id': 'new_action',
+            'action': 'task_status_update',
+            'payload': {'id': 'new-task'},
+            'createdAt': '2026-10-08T10:01:00Z',
+            'retryCount': 0,
+            'nextAttemptAt': null,
+            'lastError': null,
+            'failed': false,
+          },
+        ],
+      };
+      await prefs.setString('offline_sync_queue', jsonEncode(primary));
+      await prefs.setString('offline_sync_queue_backup', jsonEncode(backup));
+
+      final pending = await service.pending();
+
+      expect(pending.single.id, 'new_action');
+      expect(pending.single.payload['id'], 'new-task');
+      expect(
+        prefs.getString('offline_sync_queue'),
+        prefs.getString('offline_sync_queue_backup'),
+      );
+    },
+  );
+
+  test(
+    'malformed newer queue slot falls back to the last valid revision',
+    () async {
+      final service = OfflineSyncService.instance;
+      await service.clear();
+      final prefs = await SharedPreferences.getInstance();
+      final validBackup = {
+        'version': 2,
+        'revision': 7,
+        'items': [
+          {
+            'id': 'recover-me',
+            'action': 'maintenance_report',
+            'payload': {'idempotencyKey': 'recover-key'},
+            'createdAt': '2026-10-08T10:00:00Z',
+            'retryCount': 1,
+            'nextAttemptAt': null,
+            'lastError': 'temporary',
+            'failed': false,
+          },
+        ],
+      };
+      final malformedPrimary = {
+        'version': 2,
+        'revision': 8,
+        'items': [
+          {
+            'id': '',
+            'action': 'maintenance_report',
+            'payload': {},
+            'createdAt': 'not-a-date',
+            'retryCount': -1,
+          },
+        ],
+      };
+      await prefs.setString(
+        'offline_sync_queue',
+        jsonEncode(malformedPrimary),
+      );
+      await prefs.setString(
+        'offline_sync_queue_backup',
+        jsonEncode(validBackup),
+      );
+
+      final pending = await service.pending();
+
+      expect(pending.single.id, 'recover-me');
+      expect(pending.single.retryCount, 1);
+      expect(service.queueCorrupted, isFalse);
+    },
+  );
+
+  test('queue persistence uses a versioned revision envelope', () async {
+    final service = OfflineSyncService.instance;
+    await service.clear();
+    await service.enqueue('task_status_update', {
+      'id': 'task-envelope',
+      'status': 'ACCEPTED',
+    });
+
+    final prefs = await SharedPreferences.getInstance();
+    final primary =
+        jsonDecode(prefs.getString('offline_sync_queue')!) as Map;
+    final backup =
+        jsonDecode(prefs.getString('offline_sync_queue_backup')!) as Map;
+
+    expect(primary['version'], 2);
+    expect(primary['revision'], isA<int>());
+    expect(primary['revision'], greaterThan(0));
+    expect(primary, backup);
+    expect((primary['items'] as List), hasLength(1));
+  });
 
   test(
     'queue corruption without a valid backup is surfaced without deletion',
