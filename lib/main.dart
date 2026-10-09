@@ -193,7 +193,7 @@ class _SplashScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       backgroundColor: Color(0xFF10111A),
       body: Center(
         child: Column(
@@ -204,18 +204,18 @@ class _SplashScreen extends StatelessWidget {
               size: 64,
               color: Color(0xFFE6E6E6),
             ),
-            SizedBox(height: 24),
+            const SizedBox(height: 24),
             Text(
               ProductBrand.appName.toUpperCase(),
-              style: TextStyle(
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 20,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 3,
               ),
             ),
-            SizedBox(height: 24),
-            SizedBox(
+            const SizedBox(height: 24),
+            const SizedBox(
               width: 28,
               height: 28,
               child: CircularProgressIndicator(
