@@ -29,6 +29,7 @@ import 'calendar_screen.dart';
 import 'new_report_screen.dart';
 import 'report_history_screen.dart';
 import 'widgets/radiotech_clock.dart';
+import 'services/app_branding.dart';
 
 String _operatorNameFromAuth() {
   final user = FirebaseAuth.instance.currentUser;
@@ -338,7 +339,7 @@ class _HomeScreenState extends State<HomeScreen>
                 'assets/brand/radiotech-symbol-v1.png',
                 width: 38,
                 height: 38,
-                semanticLabel: 'Logo RadioTech',
+                semanticLabel: 'Logo ${AppBranding.name}',
               ),
             ),
             Expanded(
