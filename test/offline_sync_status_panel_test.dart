@@ -92,6 +92,7 @@ void main() {
     expect(attempts, 2);
     expect(await service.pending(), isEmpty);
     await tester.pumpWidget(const SizedBox.shrink());
+    service.stop();
   });
 
   testWidgets('failed sync can be removed only after confirmation', (
