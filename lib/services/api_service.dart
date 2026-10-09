@@ -207,6 +207,19 @@ class ApiService {
     );
   }
 
+  Future<List<Map<String, dynamic>>> getMyInventory() async {
+    final response = await _client.get(
+      Uri.parse(_apiV1('/operator/me/inventory')),
+      headers: await _headers,
+    );
+    _check(response, 'Impossibile caricare il magazzino.');
+    return List<Map<String, dynamic>>.from(
+      (_data(response) as List).map(
+        (item) => Map<String, dynamic>.from(item as Map),
+      ),
+    );
+  }
+
   Future<int> getMyReportCount() async {
     final response = await _client.get(
       Uri.parse(_apiV1('/operator/me/reports/count')),
@@ -750,7 +763,8 @@ class ApiService {
             final attachment = staged[index];
             final file = await _reportAttachmentStore.resolve(attachment);
             final name = attachment['name']?.toString() ?? 'attachment';
-            if (await file.length() > LocalReportAttachmentStore.maxAttachmentBytes) {
+            if (await file.length() >
+                LocalReportAttachmentStore.maxAttachmentBytes) {
               throw StateError('Allegato troppo grande: limite 10 MB.');
             }
             final upload = await _client

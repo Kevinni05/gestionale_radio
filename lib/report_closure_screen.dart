@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -7,6 +8,7 @@ import 'theme/radiotech_glass.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:signature/signature.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'services/api_service.dart';
 import 'services/maintenance_report_pdf.dart';
@@ -32,6 +34,7 @@ class ReportClosureScreen extends StatefulWidget {
   final Future<dynamic> Function()? resumeReport;
   final Future<Position?> Function()? locate;
   final Future<Map<String, String>> Function()? loadIdentity;
+  final Future<List<Map<String, dynamic>>> Function()? loadInventory;
 
   const ReportClosureScreen({
     required this.checklistResults,
@@ -42,6 +45,7 @@ class ReportClosureScreen extends StatefulWidget {
     this.resumeReport,
     this.locate,
     this.loadIdentity,
+    this.loadInventory,
     super.key,
   });
 
@@ -55,17 +59,15 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
   late final Map<String, bool> _checks;
   final TextEditingController _notesController = TextEditingController();
   final TextEditingController _centralAlertController = TextEditingController();
-  final TextEditingController _customPartController = TextEditingController();
+  final TextEditingController _partSearchController = TextEditingController();
   final ImagePicker _picker = ImagePicker();
   late final SignatureController _signatureController;
   final List<XFile> _attachments = [];
   final List<_MeasurementRow> _measurementRows = [];
-  final Map<String, int> _partsUsed = {
-    'Connettore N': 0,
-    'Antennino': 0,
-    'Cavo RG-213': 0,
-    'Fusibile 5A': 0,
-  };
+  final Map<String, int> _partsUsed = {};
+  final Map<String, Map<String, dynamic>> _partsCatalog = {};
+  bool _inventoryLoading = false;
+  String? _inventoryError;
   bool _hasCentralAlert = false;
   bool _isFormValid = false;
   bool _isSubmitting = false;
@@ -114,6 +116,123 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
       unawaited(_restoreDraft());
       unawaited(_restorePendingSubmission());
     }
+    unawaited(_loadInventory());
+  }
+
+  void _normalizeLegacyParts() {
+    for (final key in _partsUsed.keys.toList()) {
+      if (_partsCatalog.containsKey(key)) continue;
+      final matches = _partsCatalog.values
+          .where(
+            (item) =>
+                item['name'].toString().trim().toLowerCase() ==
+                    key.trim().toLowerCase() ||
+                item['sku']?.toString().trim().toLowerCase() ==
+                    key.trim().toLowerCase(),
+          )
+          .toList();
+      if (matches.length == 1) {
+        final quantity = _partsUsed.remove(key)!;
+        final id = matches.single['id'] as String;
+        _partsUsed[id] = (_partsUsed[id] ?? 0) + quantity;
+      } else if (_partsUsed[key] == 0) {
+        _partsUsed.remove(key);
+      }
+    }
+  }
+
+  void _applyInventory(List<Map<String, dynamic>> items) {
+    if (!mounted) return;
+    setState(() {
+      _partsCatalog.clear();
+      for (final item in items) {
+        final id = item['id']?.toString(), name = item['name']?.toString();
+        if (id == null || id.isEmpty || name == null || name.isEmpty) continue;
+        _partsCatalog[id] = {...item, 'id': id};
+        _partsUsed.putIfAbsent(id, () => 0);
+      }
+      _normalizeLegacyParts();
+    });
+  }
+
+  Future<void> _loadInventory() async {
+    final uid = AuthService.instance.currentUid;
+    final tenant = SessionService.instance.tenantId;
+    final cacheKey = uid != null && tenant != null
+        ? 'report_inventory_${tenant}_$uid'
+        : null;
+    SharedPreferences? preferences;
+    if (cacheKey != null) {
+      preferences = await SharedPreferences.getInstance();
+      if (!mounted ||
+          uid != AuthService.instance.currentUid ||
+          tenant != SessionService.instance.tenantId) {
+        return;
+      }
+      try {
+        final cached = preferences.getString(cacheKey);
+        if (cached != null) {
+          _applyInventory(
+            List<Map<String, dynamic>>.from(
+              (jsonDecode(cached) as List).map(
+                (item) => Map<String, dynamic>.from(item as Map),
+              ),
+            ),
+          );
+        }
+      } catch (_) {
+        /* An invalid cache does not replace the server catalog. */
+      }
+    }
+    if (widget.loadInventory == null && uid == null || !mounted) return;
+    setState(() {
+      _inventoryLoading = true;
+      _inventoryError = null;
+    });
+    try {
+      final items =
+          await (widget.loadInventory?.call() ??
+                  ApiService.instance.getMyInventory())
+              .timeout(const Duration(seconds: 12));
+      if (!mounted ||
+          uid != AuthService.instance.currentUid ||
+          tenant != SessionService.instance.tenantId) {
+        return;
+      }
+      _applyInventory(items);
+      if (cacheKey != null && preferences != null) {
+        await preferences.setString(cacheKey, jsonEncode(items));
+      }
+    } catch (_) {
+      if (mounted &&
+          uid == AuthService.instance.currentUid &&
+          tenant == SessionService.instance.tenantId) {
+        setState(
+          () => _inventoryError = _partsCatalog.isEmpty
+              ? 'Magazzino non disponibile. Riprova prima di indicare i pezzi utilizzati.'
+              : 'Magazzino offline: sono mostrati gli ultimi articoli caricati.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _inventoryLoading = false);
+    }
+  }
+
+  List<Map<String, dynamic>> _materialsForSubmission() {
+    return _partsUsed.entries.where((entry) => entry.value > 0).map((entry) {
+      final item = _partsCatalog[entry.key];
+      if (item == null) {
+        throw StateError(
+          'Il pezzo «${entry.key}» della bozza non corrisponde al magazzino. Rimuovilo e seleziona l’articolo corretto.',
+        );
+      }
+      return <String, dynamic>{
+        'inventoryId': item['id'],
+        'sku': item['sku'] ?? '',
+        'name': item['name'],
+        'quantity': entry.value,
+      };
+    }).toList();
   }
 
   Future<Map<String, String>> _loadIdentity() async {
@@ -177,7 +296,7 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
     _animationController.dispose();
     _notesController.dispose();
     _centralAlertController.dispose();
-    _customPartController.dispose();
+    _partSearchController.dispose();
     for (final row in _measurementRows) {
       row.dispose();
     }
@@ -284,6 +403,7 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
         }
       }
     }
+    _normalizeLegacyParts();
 
     final rows = <_MeasurementRow>[];
     final rawMeasurements = draft['measurements'];
@@ -383,17 +503,6 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
       final current = _partsUsed[part] ?? 0;
       final next = (current + delta).clamp(0, 99);
       _partsUsed[part] = next;
-    });
-    _scheduleDraftSave();
-  }
-
-  void _addCustomPart() {
-    final part = _customPartController.text.trim();
-    if (part.isEmpty || _partsUsed.containsKey(part)) return;
-
-    setState(() {
-      _partsUsed[part] = 0;
-      _customPartController.clear();
     });
     _scheduleDraftSave();
   }
@@ -1054,40 +1163,104 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
   }
 
   Widget _buildPartsGrid(BuildContext context) {
+    final query = _partSearchController.text.trim().toLowerCase();
+    final rows = _partsUsed.entries.where((entry) {
+      final item = _partsCatalog[entry.key];
+      return query.isEmpty ||
+          '${item?['name'] ?? entry.key} ${item?['sku'] ?? ''}'
+              .toLowerCase()
+              .contains(query);
+    });
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        ..._partsUsed.entries.map((entry) {
+        if (_inventoryLoading) const LinearProgressIndicator(),
+        if (_inventoryError != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              _inventoryError!,
+              style: const TextStyle(color: Color(0xFFAAAAB4)),
+            ),
+          ),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                key: const ValueKey('report-material-search'),
+                controller: _partSearchController,
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(
+                  labelText: 'Cerca nel magazzino',
+                  hintText: 'Nome o codice articolo',
+                ),
+              ),
+            ),
+            IconButton(
+              onPressed: _inventoryLoading ? null : _loadInventory,
+              tooltip: 'Aggiorna magazzino',
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (rows.isEmpty)
+          const Text(
+            'Nessun articolo disponibile. Puoi aggiornare il magazzino o inviare il report senza prelievi.',
+          ),
+        ...rows.map((entry) {
+          final item = _partsCatalog[entry.key];
+          final name = item?['name']?.toString() ?? entry.key;
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.surfaceContainer,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.08),
-                  width: 1.5,
-                ),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
               ),
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      entry.key,
-                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                          ),
+                        ),
+                        Text(
+                          item == null
+                              ? 'Pezzo della vecchia bozza: seleziona l’articolo corretto'
+                              : '${item['sku'] ?? ''} · disponibili: ${item['quantity'] ?? '—'} ${item['unit'] ?? ''}',
+                          style: const TextStyle(
+                            color: Color(0xFFAAAAB4),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   IconButton(
+                    key: ValueKey('material-decrease-${entry.key}'),
                     onPressed: () => _updatePartQuantity(entry.key, -1),
+                    tooltip: 'Riduci $name',
                     icon: const Icon(Icons.remove_circle_outline),
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                   Text(
                     entry.value.toString(),
                     style: const TextStyle(color: Colors.white, fontSize: 15),
                   ),
                   IconButton(
-                    onPressed: () => _updatePartQuantity(entry.key, 1),
+                    key: ValueKey('material-increase-${entry.key}'),
+                    onPressed: item == null
+                        ? null
+                        : () => _updatePartQuantity(entry.key, 1),
+                    tooltip: 'Aumenta $name',
                     icon: const Icon(Icons.add_circle_outline),
                     color: Theme.of(context).colorScheme.primary,
                   ),
@@ -1096,30 +1269,6 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
             ),
           );
         }),
-        const SizedBox(height: 4),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _customPartController,
-                textInputAction: TextInputAction.done,
-                onSubmitted: (_) => _addCustomPart(),
-                style: const TextStyle(color: Colors.white, fontSize: 14),
-                decoration: const InputDecoration(
-                  labelText: 'Altro pezzo',
-                  hintText: 'Es. morsetto, rele, staffa',
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            IconButton(
-              onPressed: _addCustomPart,
-              tooltip: 'Aggiungi pezzo',
-              icon: const Icon(Icons.add_circle),
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          ],
-        ),
       ],
     );
   }
@@ -1325,6 +1474,7 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
           'Il report in coda non è più disponibile. Controlla i report inviati prima di creare una nuova submission.',
         );
       }
+      final materials = _materialsForSubmission();
       _stage('Verifica della posizione GPS…');
       final location = await (widget.locate ?? _currentLocation)();
       if (widget.taskId != null && location == null) {
@@ -1339,15 +1489,6 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
             signatureBytes;
       }
 
-      final materials = _partsUsed.entries
-          .where((entry) => entry.value > 0)
-          .map(
-            (entry) => <String, dynamic>{
-              'name': entry.key,
-              'quantity': entry.value,
-            },
-          )
-          .toList();
       final measurements = _readMeasurements();
 
       final submittedAt = DateTime.now();

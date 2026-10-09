@@ -75,8 +75,30 @@ void main() {
                           'antennaName': 'Ponte radio Sanarica',
                           'operatorName': 'Operatore di collaudo',
                         },
+                        loadInventory: () async => [
+                          {
+                            'id': 'inventory-001',
+                            'sku': 'RF-001',
+                            'name': 'Connettore N',
+                            'quantity': 37,
+                          },
+                          {
+                            'id': 'inventory-002',
+                            'sku': 'RF-002',
+                            'name': 'Cavo coassiale',
+                            'quantity': 3,
+                          },
+                        ],
                         submitReport: (report, files, bytes) async {
                           calls++;
+                          expect(report['materialsUsed'], [
+                            {
+                              'inventoryId': 'inventory-002',
+                              'sku': 'RF-002',
+                              'name': 'Cavo coassiale',
+                              'quantity': 1,
+                            },
+                          ]);
                           expect(
                             bytes.keys.any((n) => n.endsWith('.pdf')),
                             true,
@@ -94,6 +116,26 @@ void main() {
         );
         await tester.tap(find.text('Apri report'));
         await tester.pumpAndSettle();
+        await tester.scrollUntilVisible(
+          find.byKey(const ValueKey('report-material-search')),
+          200,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.enterText(
+          find.byKey(const ValueKey('report-material-search')),
+          'RF-002',
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Antennino'), findsNothing);
+        expect(find.text('Fusibile 5A'), findsNothing);
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('material-increase-inventory-002')),
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('material-increase-inventory-002')),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
         await tester.scrollUntilVisible(
           find.byKey(const ValueKey('report-notes')),
           200,
