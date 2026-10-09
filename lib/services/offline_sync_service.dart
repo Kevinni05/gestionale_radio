@@ -67,18 +67,33 @@ class QueuedSyncAction {
   };
 
   factory QueuedSyncAction.fromJson(Map<String, dynamic> json) {
+    final id = json['id']?.toString().trim() ?? '';
+    final action = json['action']?.toString().trim() ?? '';
     final payload = json['payload'];
+    final createdAt = DateTime.tryParse(json['createdAt']?.toString() ?? '');
+    final retryCount = int.tryParse(json['retryCount']?.toString() ?? '0');
+    final nextRaw = json['nextAttemptAt']?.toString();
+    final nextAttemptAt = nextRaw == null || nextRaw.isEmpty
+        ? null
+        : DateTime.tryParse(nextRaw);
+
+    if (id.isEmpty ||
+        action.isEmpty ||
+        payload is! Map ||
+        createdAt == null ||
+        retryCount == null ||
+        retryCount < 0 ||
+        nextRaw != null && nextRaw.isNotEmpty && nextAttemptAt == null) {
+      throw const FormatException('Record della coda offline non valido.');
+    }
+
     return QueuedSyncAction(
-      id: json['id']?.toString() ?? '',
-      action: json['action']?.toString() ?? 'unknown',
-      payload: payload is Map
-          ? Map<String, dynamic>.from(payload)
-          : <String, dynamic>{},
-      createdAt:
-          DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
-          DateTime.now().toUtc(),
-      retryCount: int.tryParse(json['retryCount']?.toString() ?? '0') ?? 0,
-      nextAttemptAt: DateTime.tryParse(json['nextAttemptAt']?.toString() ?? ''),
+      id: id,
+      action: action,
+      payload: Map<String, dynamic>.from(payload),
+      createdAt: createdAt,
+      retryCount: retryCount,
+      nextAttemptAt: nextAttemptAt,
       lastError: json['lastError']?.toString(),
       failed: json['failed'] == true,
     );
