@@ -51,7 +51,7 @@ jobs:
           "$signer" verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk > certificate-report.txt
           node - <<'NODE'
           const fs = require('node:fs'), crypto = require('node:crypto');
-          const report = fs.readFileSync('certificate-report.txt','utf8'), certificate = report.match(/Signer #1 certificate SHA-256 digest: ([a-f0-9]+)/i)?.[1]?.toLowerCase();
+          const report = fs.readFileSync('certificate-report.txt','utf8'), certificate = report.match(/(?:Signer #1|V[234](?:\.\d+)? Signer):? certificate SHA-256 digest: ([a-f0-9]+)/i)?.[1]?.toLowerCase();
           if (certificate !== process.env.ANDROID_EXPECTED_SIGNING_SHA256.toLowerCase() || /Android Debug/i.test(report)) throw new Error('Unexpected signing certificate.');
           const match = fs.readFileSync('pubspec.yaml','utf8').match(/^version:\s*([^+\s]+)\+(\d+)/m);
           if (!match || Number(match[2]) <= 2020) throw new Error('Release version must increase.');

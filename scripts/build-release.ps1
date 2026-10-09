@@ -29,7 +29,7 @@ $sdkDirectory = if ($env:ANDROID_SDK_ROOT) { $env:ANDROID_SDK_ROOT } elseif ($en
 $signer = Get-ChildItem -LiteralPath (Join-Path $sdkDirectory 'build-tools') -Directory | Where-Object { $_.Name -match '^\d+\.\d+\.\d+$' } | Sort-Object { [version]$_.Name } -Descending | ForEach-Object { Join-Path $_.FullName 'apksigner.bat' } | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 if (!$signer) { throw 'Android apksigner is required to verify the production artifact.' }
 $certificateReport = (& $signer verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk 2>&1 | Out-String)
-if ($LASTEXITCODE -ne 0 -or $certificateReport -notmatch 'Signer #1 certificate SHA-256 digest: ([a-f0-9]+)' -or $Matches[1] -ne '73005990b6bad93b1bb3383121f6dcc2293b3e5e3a60e1ae7eaf09a7d97c4fa4' -or $certificateReport -match 'Android Debug') { throw 'The APK does not have the verified RadioTech production certificate.' }
+if ($LASTEXITCODE -ne 0 -or $certificateReport -notmatch '(?:Signer #1|V[234](?:\.\d+)? Signer):? certificate SHA-256 digest: ([a-f0-9]+)' -or $Matches[1] -ne '73005990b6bad93b1bb3383121f6dcc2293b3e5e3a60e1ae7eaf09a7d97c4fa4' -or $certificateReport -match 'Android Debug') { throw 'The APK does not have the verified RadioTech production certificate.' }
 New-Item -ItemType Directory -Force -Path artifacts | Out-Null
 $releaseName = "RadioTech-$($releaseVersion.Groups[1].Value)-$BuildNumber"
 Copy-Item -LiteralPath build/app/outputs/flutter-apk/app-release.apk -Destination "artifacts/$releaseName.apk"
