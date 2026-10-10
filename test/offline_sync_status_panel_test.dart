@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'support/protected_local_mock.dart';
@@ -17,20 +16,16 @@ void main() {
 
   tearDown(() async {
     OfflineSyncService.instance.stop();
-    debugPrint('Queue widget cleanup: begin');
     await OfflineSyncService.instance.clear();
-    debugPrint('Queue widget cleanup: complete');
   });
 
   testWidgets('signed-out and other-tenant identities cannot inspect queued operations', (tester) async {
     final service = OfflineSyncService.instance;
-    debugPrint('Queue identity test: preparing records');
     await tester.runAsync(() => service.enqueue('maintenance_report', {
       'actorUid': 'operator-a', 'tenantId': 'tenant-a',
       'idempotencyKey': 'private-report',
       'report': {'description': 'Private tenant A report'},
     }));
-    debugPrint('Queue identity test: records prepared');
     for (final identity in [
       (uid: null, tenantId: null),
       (uid: 'operator-a', tenantId: null),
@@ -41,20 +36,18 @@ void main() {
         key: UniqueKey(), identityProvider: () => identity,
       ))));
       await tester.pumpAndSettle();
-      debugPrint('Queue identity test: identity rendered');
       expect(find.text('1 in attesa · 0 da risolvere'), findsNothing);
       expect(find.textContaining('Private tenant A report'), findsNothing);
     }
     expect(await tester.runAsync(() => service.pending()), hasLength(1));
-    debugPrint('Queue identity test: records preserved');
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('unavailable native data is preserved and surfaced with a retry action', (tester) async {
     const channel = MethodChannel('radiotech/local-data');
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMessageHandler(
-      channel.name,
-      (_) => SynchronousFuture(channel.codec.encodeErrorEnvelope(code: 'LOCAL_DATA_UNAVAILABLE')),
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+      channel,
+      (_) async => throw PlatformException(code: 'LOCAL_DATA_UNAVAILABLE'),
     );
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: OfflineSyncStatusPanel(
       identityProvider: () => (uid: 'operator-a', tenantId: 'tenant-a'),
