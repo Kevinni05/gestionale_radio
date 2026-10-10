@@ -50,9 +50,9 @@ class TaskSummary {
   ].join(' ').toLowerCase().contains(query.trim().toLowerCase());
   String? get nextAction => switch (status) {
     'ASSIGNED' || 'PENDENTE' => 'ACCEPTED',
-    'ACCEPTED' => 'EN_ROUTE',
+    'ACCEPTED' => 'CHECKED_IN',
     'EN_ROUTE' => 'CHECKED_IN',
-    'CHECKED_IN' => 'IN_PROGRESS',
+    'CHECKED_IN' => 'REPORT',
     'IN_PROGRESS' || 'WAITING' || 'COMPLETED' || 'REJECTED' => 'REPORT',
     _ => null,
   };
