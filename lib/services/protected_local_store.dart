@@ -5,12 +5,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// encrypted with an Android Keystore key. No plaintext fallback is permitted.
 class ProtectedLocalStore {
   static const _channel = MethodChannel('radiotech/local-data');
-  static Future<void> _operations = Future<void>.value();
+  static Future<void>? _operations;
 
-  static Future<T> _serialize<T>(Future<T> Function() operation) {
-    final result = _operations.then((_) => operation());
-    _operations = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
-    return result;
+  static Future<T> _serialize<T>(Future<T> Function() operation) async {
+    final previous = _operations;
+    final released = Completer<void>.sync();
+    _operations = released.future;
+    try {
+      if (previous != null) await previous;
+      return await operation();
+    } finally {
+      if (identical(_operations, released.future)) _operations = null;
+      released.complete();
+    }
   }
 
   static bool _allowed(String key) =>
@@ -72,3 +79,4 @@ class ProtectedLocalStore {
     await _channel.invokeMethod<void>('removeAll', {'keys': keys});
   });
 }
+import 'dart:async';

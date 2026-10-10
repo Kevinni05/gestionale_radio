@@ -17,16 +17,20 @@ void main() {
 
   tearDown(() async {
     OfflineSyncService.instance.stop();
+    debugPrint('Queue widget cleanup: begin');
     await OfflineSyncService.instance.clear();
+    debugPrint('Queue widget cleanup: complete');
   });
 
   testWidgets('signed-out and other-tenant identities cannot inspect queued operations', (tester) async {
     final service = OfflineSyncService.instance;
+    debugPrint('Queue identity test: preparing records');
     await tester.runAsync(() => service.enqueue('maintenance_report', {
       'actorUid': 'operator-a', 'tenantId': 'tenant-a',
       'idempotencyKey': 'private-report',
       'report': {'description': 'Private tenant A report'},
     }));
+    debugPrint('Queue identity test: records prepared');
     for (final identity in [
       (uid: null, tenantId: null),
       (uid: 'operator-a', tenantId: null),
@@ -37,10 +41,12 @@ void main() {
         key: UniqueKey(), identityProvider: () => identity,
       ))));
       await tester.pumpAndSettle();
+      debugPrint('Queue identity test: identity rendered');
       expect(find.text('1 in attesa · 0 da risolvere'), findsNothing);
       expect(find.textContaining('Private tenant A report'), findsNothing);
     }
     expect(await tester.runAsync(() => service.pending()), hasLength(1));
+    debugPrint('Queue identity test: records preserved');
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
