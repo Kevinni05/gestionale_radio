@@ -8,6 +8,7 @@ void main() {
       'CHIEF_EXECUTIVE',
       'CUSTOMER',
       'NETWORK_MANAGER',
+      'ENGINEER',
       'VIEWER',
       'OPERATOR',
     ]) {
@@ -17,3 +18,4 @@ void main() {
     expect(SessionService.isAppRole(null), isFalse);
   });
 }
+
