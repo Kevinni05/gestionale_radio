@@ -20,11 +20,11 @@ void main() {
 
   testWidgets('signed-out and other-tenant identities cannot inspect queued operations', (tester) async {
     final service = OfflineSyncService.instance;
-    await service.enqueue('maintenance_report', {
+    await tester.runAsync(() => service.enqueue('maintenance_report', {
       'actorUid': 'operator-a', 'tenantId': 'tenant-a',
       'idempotencyKey': 'private-report',
       'report': {'description': 'Private tenant A report'},
-    });
+    }));
     for (final identity in [
       (uid: null, tenantId: null),
       (uid: 'operator-a', tenantId: null),
@@ -38,7 +38,7 @@ void main() {
       expect(find.text('1 in attesa · 0 da risolvere'), findsNothing);
       expect(find.textContaining('Private tenant A report'), findsNothing);
     }
-    expect(await service.pending(), hasLength(1));
+    expect(await tester.runAsync(() => service.pending()), hasLength(1));
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -46,22 +46,22 @@ void main() {
     tester,
   ) async {
     final service = OfflineSyncService.instance;
-    await service.clear();
-    await service.enqueue('maintenance_report', {
+    await tester.runAsync(() => service.clear());
+    await tester.runAsync(() => service.enqueue('maintenance_report', {
       'actorUid': 'operator-a',
       'tenantId': 'tenant-a',
       'idempotencyKey': 'report-conflict',
       'report': {'description': 'operator report'},
-    });
-    await service.start(
+    }));
+    await tester.runAsync(() => service.start(
       interval: const Duration(hours: 1),
       executor: (_, _) =>
           Future<void>.error(const SyncConflictException('Payload diverso')),
-    );
-    await service.start(
+    ));
+    await tester.runAsync(() => service.start(
       interval: const Duration(hours: 1),
       executor: (_, _) async {},
-    );
+    ));
 
     await tester.pumpWidget(
       MaterialApp(home: Scaffold(body: OfflineSyncStatusPanel(
@@ -78,7 +78,7 @@ void main() {
     await tester.tap(find.byTooltip('Riprova'));
     await tester.pumpAndSettle();
 
-    expect(await service.pending(), isEmpty);
+    expect(await tester.runAsync(() => service.pending()), isEmpty);
     await tester.pumpWidget(const SizedBox.shrink());
     service.stop();
   });
@@ -87,16 +87,16 @@ void main() {
     tester,
   ) async {
     final service = OfflineSyncService.instance;
-    await service.clear();
-    await service.enqueue('task_status_update', {
+    await tester.runAsync(() => service.clear());
+    await tester.runAsync(() => service.enqueue('task_status_update', {
       'id': 'task-waiting',
       'status': 'ACCEPTED',
       'actorUid': 'operator-a',
       'tenantId': 'tenant-a',
       'idempotencyKey': 'task-waiting-key',
-    });
+    }));
     var attempts = 0;
-    await service.start(
+    await tester.runAsync(() => service.start(
       interval: const Duration(hours: 1),
       executor: (_, _) {
         attempts++;
@@ -105,7 +105,7 @@ void main() {
         }
         return Future<void>.value();
       },
-    );
+    ));
 
     await tester.pumpWidget(
       MaterialApp(home: Scaffold(body: OfflineSyncStatusPanel(
@@ -123,7 +123,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(attempts, 2);
-    expect(await service.pending(), isEmpty);
+    expect(await tester.runAsync(() => service.pending()), isEmpty);
     await tester.pumpWidget(const SizedBox.shrink());
     service.stop();
   });
@@ -132,23 +132,23 @@ void main() {
     tester,
   ) async {
     final service = OfflineSyncService.instance;
-    await service.clear();
-    await service.enqueue('task_status_update', {
+    await tester.runAsync(() => service.clear());
+    await tester.runAsync(() => service.enqueue('task_status_update', {
       'id': 'task-failed',
       'status': 'ACCEPTED',
       'actorUid': 'operator-a',
       'tenantId': 'tenant-a',
       'idempotencyKey': 'task-failed-key',
-    });
-    await service.start(
+    }));
+    await tester.runAsync(() => service.start(
       interval: const Duration(hours: 1),
       executor: (_, _) =>
           Future<void>.error(const PermanentSyncFailure('permanent failure')),
-    );
-    await service.start(
+    ));
+    await tester.runAsync(() => service.start(
       interval: const Duration(hours: 1),
       executor: (_, _) async {},
-    );
+    ));
 
     await tester.pumpWidget(
       MaterialApp(home: Scaffold(body: OfflineSyncStatusPanel(
@@ -161,11 +161,11 @@ void main() {
     await tester.tap(find.byTooltip('Rimuovi operazione fallita'));
     await tester.pumpAndSettle();
 
-    expect(await service.pending(), hasLength(1));
+    expect(await tester.runAsync(() => service.pending()), hasLength(1));
     await tester.tap(find.text('Rimuovi'));
     await tester.pumpAndSettle();
 
-    expect(await service.pending(), isEmpty);
+    expect(await tester.runAsync(() => service.pending()), isEmpty);
     await tester.pumpWidget(const SizedBox.shrink());
     service.stop();
   });
@@ -174,17 +174,17 @@ void main() {
     'unrecoverable queue corruption is visible and does not crash startup',
     (tester) async {
       final preferences = ProtectedTestRecords();
-      await preferences.setString('offline_sync_queue', '{broken-primary');
-      await preferences.setString(
+      await tester.runAsync(() => preferences.setString('offline_sync_queue', '{broken-primary'));
+      await tester.runAsync(() => preferences.setString(
         'offline_sync_queue_backup',
         '{broken-backup',
-      );
+      ));
 
       final service = OfflineSyncService.instance;
-      await service.start(
+      await tester.runAsync(() => service.start(
         interval: const Duration(hours: 1),
         executor: (_, _) async {},
-      );
+      ));
       expect(service.queueCorrupted, isTrue);
 
       await tester.pumpWidget(
@@ -198,9 +198,9 @@ void main() {
         find.textContaining('La coda offline è danneggiata'),
         findsOneWidget,
       );
-      expect(await preferences.getString('offline_sync_queue'), '{broken-primary');
+      expect(await tester.runAsync(() => preferences.getString('offline_sync_queue')), '{broken-primary');
       expect(
-        await preferences.getString('offline_sync_queue_backup'),
+        await tester.runAsync(() => preferences.getString('offline_sync_queue_backup')),
         '{broken-backup',
       );
       await tester.pumpWidget(const SizedBox.shrink());
