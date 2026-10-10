@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'asset_history_screen.dart';
 import 'checklist_screen.dart';
+import 'report_closure_screen.dart';
 import 'models/antenna.dart';
 import 'providers/antenna_provider.dart';
 import 'services/api_service.dart';
@@ -200,6 +201,21 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
                 context,
                 'Longitudine',
                 antenna.longitude.toStringAsFixed(5),
+              ),
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => ReportClosureScreen(
+                      antennaId: antenna.id,
+                      checklistResults: {
+                        for (final item in antenna.checklistTemplate) item: false,
+                      },
+                    ),
+                  ),
+                ),
+                icon: const Icon(Icons.note_add_outlined),
+                label: const Text('Crea nuovo report'),
               ),
               const SizedBox(height: 24),
               _buildSectionTitle(context, 'Note condivise'),
