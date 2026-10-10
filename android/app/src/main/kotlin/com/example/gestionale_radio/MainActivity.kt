@@ -26,12 +26,12 @@ class MainActivity : FlutterActivity() {
       val fingerprints = signatures?.map { signature -> MessageDigest.getInstance("SHA-256").digest(signature.toByteArray()).joinToString("") { "%02x".format(it) } } ?: emptyList()
       @Suppress("DEPRECATION")
       val version = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
-      result.success(mapOf("versionName" to info.versionName, "versionCode" to version, "signingSha256" to fingerprints))
+      result.success(mapOf("applicationId" to packageName, "displayName" to packageManager.getApplicationLabel(applicationInfo).toString(), "versionName" to info.versionName, "versionCode" to version, "signingSha256" to fingerprints))
      }
      "openDownload" -> {
       val url = call.argument<String>("url") ?: throw IllegalArgumentException()
       val uri = Uri.parse(url)
-      if (uri.scheme != "https" || uri.host != "github.com" || uri.userInfo != null || uri.query != null || uri.fragment != null || !Regex("^/Kevinni05/gestionale_radio/releases/download/v[0-9A-Za-z.\\-]+/RadioTech-[0-9A-Za-z.\\-]+\\.apk$").matches(uri.path ?: "")) throw IllegalArgumentException()
+      if (uri.scheme != "https" || uri.host != "github.com" || uri.userInfo != null || uri.query != null || uri.fragment != null || !Regex("^/Kevinni05/gestionale_radio/releases/download/v[0-9A-Za-z.\\-]+/[A-Za-z0-9][0-9A-Za-z._\\-]*-[0-9A-Za-z.\\-]+\\.apk$").matches(uri.path ?: "")) throw IllegalArgumentException()
       startActivity(Intent(Intent.ACTION_VIEW, uri))
       result.success(true)
      }

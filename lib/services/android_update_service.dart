@@ -62,7 +62,9 @@ class AndroidUpdateService {
     final code = latest['versionCode'];
     final certificate = latest['signingSha256']?.toString().toLowerCase();
     final digest = latest['sha256']?.toString().toLowerCase();
-    if (latest['applicationId'] != 'com.example.gestionale_radio' ||
+    if (current['applicationId'] is! String ||
+        !RegExp(r'^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$').hasMatch(current['applicationId']) ||
+        latest['applicationId'] != current['applicationId'] ||
         code is! int ||
         code < 1 ||
         certificate == null ||
@@ -73,7 +75,7 @@ class AndroidUpdateService {
     }
     if ((current['versionCode'] as num).toInt() >= code) {
       return AndroidUpdateCheck(
-        'RadioTech ${current['versionName']} è aggiornato.',
+        '${current['displayName'] ?? 'RadioTech'} ${current['versionName']} è aggiornato.',
       );
     }
     final uri = Uri.tryParse(latest['downloadUrl']?.toString() ?? '');
@@ -89,7 +91,7 @@ class AndroidUpdateService {
       );
     }
     return AndroidUpdateCheck(
-      'È disponibile RadioTech ${latest['versionName']}. Apri il download per aggiornare l’app.',
+      'È disponibile ${current['displayName'] ?? 'RadioTech'} ${latest['versionName']}. Apri il download per aggiornare l’app.',
       url: uri,
     );
   }
@@ -101,7 +103,7 @@ class AndroidUpdateService {
       uri.query.isEmpty &&
       uri.fragment.isEmpty &&
       RegExp(
-        r'^/Kevinni05/gestionale_radio/releases/download/v[0-9A-Za-z.\-]+/RadioTech-[0-9A-Za-z.\-]+\.apk$',
+        r'^/Kevinni05/gestionale_radio/releases/download/v[0-9A-Za-z.\-]+/[A-Za-z0-9][0-9A-Za-z._\-]*-[0-9A-Za-z.\-]+\.apk$',
       ).hasMatch(uri.path);
   static Future<void> openDownload(Uri uri) async {
     if (!isTrustedDownload(uri)) {
