@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -79,4 +80,3 @@ class ProtectedLocalStore {
     await _channel.invokeMethod<void>('removeAll', {'keys': keys});
   });
 }
-import 'dart:async';
