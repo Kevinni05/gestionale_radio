@@ -117,6 +117,28 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
       unawaited(_restorePendingSubmission());
     }
     unawaited(_loadInventory());
+    unawaited(_loadAntennaChecklist());
+  }
+
+  /// Populate the editable report checklist even when opened directly from a task.
+  /// Existing draft answers always take precedence over template defaults.
+  Future<void> _loadAntennaChecklist() async {
+    if (widget.antennaId.trim().isEmpty ||
+        widget.antennaId == 'GENERICO') return;
+    try {
+      final antenna = await ApiService.instance.getAntennaDetails(widget.antennaId);
+      final raw = antenna['checklist_template'] ?? antenna['checklistTemplate'];
+      if (raw is! List || !mounted) return;
+      setState(() {
+        for (final item in raw) {
+          if (item is String && item.trim().isNotEmpty) {
+            _checks.putIfAbsent(item.trim(), () => false);
+          }
+        }
+      });
+    } catch (_) {
+      // Keep report editing available offline and preserve supplied/draft answers.
+    }
   }
 
   void _normalizeLegacyParts() {
@@ -753,6 +775,11 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
             ],
           ),
           const SizedBox(height: 12),
+          if (_checks.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text('Nessun controllo configurato per questa antenna.'),
+            ),
           ..._checks.entries.map(
             (entry) => AnimatedContainer(
               duration: MediaQuery.disableAnimationsOf(context)
