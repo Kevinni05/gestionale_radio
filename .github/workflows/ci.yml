@@ -15,6 +15,7 @@ concurrency:
 jobs:
   quality:
     name: Flutter analyze and tests
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -45,10 +46,11 @@ jobs:
         run: flutter analyze
 
       - name: Run Flutter tests
-        run: flutter test --reporter expanded
+        run: flutter test --reporter expanded --timeout 2m
 
   android-qa:
     name: Android QA compile
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

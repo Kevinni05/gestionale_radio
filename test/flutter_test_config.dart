@@ -4,6 +4,6 @@ import 'support/protected_local_mock.dart';
 
 Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   TestWidgetsFlutterBinding.ensureInitialized();
-  installProtectedLocalMock();
+  setUp(installProtectedLocalMock);
   await testMain();
 }
