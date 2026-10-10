@@ -1610,11 +1610,11 @@ class AntennaMapScreen extends StatelessWidget {
                     },
                     child: Container(
                       decoration: BoxDecoration(
-                        color: AppColors.cyan,
+                        color: const Color(0xFF16A34A),
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: AppColors.cyan.withValues(alpha: 0.40),
+                            color: const Color(0xFF16A34A).withValues(alpha: 0.40),
                             blurRadius: 14,
                           ),
                         ],
