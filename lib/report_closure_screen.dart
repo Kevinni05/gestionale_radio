@@ -1494,6 +1494,7 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
     setState(() => _isSubmitting = true);
     try {
       await _draftReady;
+      if (!mounted) return;
       FocusScope.of(context).unfocus();
       setState(() => _submissionError = null);
       _draftSaveTimer?.cancel();
