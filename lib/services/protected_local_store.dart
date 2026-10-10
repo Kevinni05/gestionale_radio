@@ -9,7 +9,7 @@ class ProtectedLocalStore {
 
   static Future<T> _serialize<T>(Future<T> Function() operation) {
     final result = _operations.then((_) => operation());
-    _operations = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    _operations = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
     return result;
   }
 

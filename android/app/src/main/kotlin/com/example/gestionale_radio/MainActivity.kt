@@ -11,12 +11,12 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+ private val localDataWorker = java.util.concurrent.Executors.newSingleThreadExecutor()
+ private var localData: ProtectedLocalStore? = null
  private var pending: MethodChannel.Result? = null
  private var pdfBytes: ByteArray? = null
  override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
   super.configureFlutterEngine(flutterEngine)
-  val localDataWorker = java.util.concurrent.Executors.newSingleThreadExecutor()
-  var localData: ProtectedLocalStore? = null
   MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "radiotech/local-data").setMethodCallHandler { call, result ->
    localDataWorker.execute {
     try {
@@ -71,6 +71,12 @@ class MainActivity : FlutterActivity() {
     startActivityForResult(intent, 7412)
    } catch (error: Exception) { pending = null; pdfBytes = null; result.error("SAVE_FAILED", "Impossibile aprire il salvataggio", null) }
   }
+ }
+ override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+  MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "radiotech/local-data").setMethodCallHandler(null)
+  localDataWorker.execute { localData?.close(); localData = null }
+  localDataWorker.shutdown()
+  super.cleanUpFlutterEngine(flutterEngine)
  }
  @Deprecated("Android result callback used by FlutterActivity")
  override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'package:flutter/services.dart';
 
 import 'protected_local_store.dart';
 
@@ -310,6 +311,9 @@ class OfflineSyncService {
       try {
         queue = await pending();
       } on StateError {
+        return;
+      } on PlatformException {
+        _queueCorrupted = true;
         return;
       }
       if (queue.isEmpty) {
