@@ -57,7 +57,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
       }
-      expect(changes, ['ACCEPTED', 'CHECKED_IN', 'IN_PROGRESS']);
+      expect(changes, ['ACCEPTED', 'EN_ROUTE', 'CHECKED_IN', 'IN_PROGRESS']);
       await tester.ensureVisible(find.text('Compila rapporto'));
       await tester.tap(find.text('Compila rapporto'));
       await tester.pumpAndSettle();
