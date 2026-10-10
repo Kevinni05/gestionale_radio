@@ -51,13 +51,15 @@ class _OfflineSyncStatusPanelState extends State<OfflineSyncStatusPanel> {
     try {
       actions = await _service.pending();
       final uid = AuthService.instance.currentUid;
-      if (uid != null) {
+      final tenantId = SessionService.instance.tenantId;
+      if (uid == null || tenantId == null || tenantId.isEmpty) {
+        actions = [];
+      } else {
         actions = actions
             .where(
               (action) =>
                   action.payload['actorUid'] == uid &&
-                  action.payload['tenantId'] ==
-                      SessionService.instance.tenantId,
+                  action.payload['tenantId'] == tenantId,
             )
             .toList();
       }
@@ -252,3 +254,4 @@ class _OfflineSyncStatusPanelState extends State<OfflineSyncStatusPanel> {
     _ => 'Operazione offline',
   };
 }
+
