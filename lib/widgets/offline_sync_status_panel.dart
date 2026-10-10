@@ -8,9 +8,14 @@ import '../services/auth_service.dart';
 import '../services/session_service.dart';
 
 class OfflineSyncStatusPanel extends StatefulWidget {
-  const OfflineSyncStatusPanel({super.key, this.refreshToken = 0});
+  const OfflineSyncStatusPanel({
+    super.key,
+    this.refreshToken = 0,
+    this.identityProvider,
+  });
 
   final int refreshToken;
+  final ({String? uid, String? tenantId}) Function()? identityProvider;
 
   @override
   State<OfflineSyncStatusPanel> createState() => _OfflineSyncStatusPanelState();
@@ -50,8 +55,12 @@ class _OfflineSyncStatusPanelState extends State<OfflineSyncStatusPanel> {
     List<QueuedSyncAction> actions;
     try {
       actions = await _service.pending();
-      final uid = AuthService.instance.currentUid;
-      final tenantId = SessionService.instance.tenantId;
+      final identity = widget.identityProvider?.call() ?? (
+        uid: AuthService.instance.currentUid,
+        tenantId: SessionService.instance.tenantId,
+      );
+      final uid = identity.uid;
+      final tenantId = identity.tenantId;
       if (uid == null || tenantId == null || tenantId.isEmpty) {
         actions = [];
       } else {

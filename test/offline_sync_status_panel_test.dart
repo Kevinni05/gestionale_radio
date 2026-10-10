@@ -17,12 +17,38 @@ void main() {
     await OfflineSyncService.instance.clear();
   });
 
+  testWidgets('signed-out and other-tenant identities cannot inspect queued operations', (tester) async {
+    final service = OfflineSyncService.instance;
+    await service.enqueue('maintenance_report', {
+      'actorUid': 'operator-a', 'tenantId': 'tenant-a',
+      'idempotencyKey': 'private-report',
+      'report': {'description': 'Private tenant A report'},
+    });
+    for (final identity in [
+      (uid: null, tenantId: null),
+      (uid: 'operator-a', tenantId: null),
+      (uid: 'operator-a', tenantId: 'tenant-b'),
+      (uid: 'operator-b', tenantId: 'tenant-a'),
+    ]) {
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: OfflineSyncStatusPanel(
+        key: UniqueKey(), identityProvider: () => identity,
+      ))));
+      await tester.pumpAndSettle();
+      expect(find.text('1 in attesa · 0 da risolvere'), findsNothing);
+      expect(find.textContaining('Private tenant A report'), findsNothing);
+    }
+    expect(await service.pending(), hasLength(1));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('failed sync is visible and can be retried manually', (
     tester,
   ) async {
     final service = OfflineSyncService.instance;
     await service.clear();
     await service.enqueue('maintenance_report', {
+      'actorUid': 'operator-a',
+      'tenantId': 'tenant-a',
       'idempotencyKey': 'report-conflict',
       'report': {'description': 'operator report'},
     });
@@ -37,7 +63,9 @@ void main() {
     );
 
     await tester.pumpWidget(
-      const MaterialApp(home: Scaffold(body: OfflineSyncStatusPanel())),
+      MaterialApp(home: Scaffold(body: OfflineSyncStatusPanel(
+        identityProvider: () => (uid: 'operator-a', tenantId: 'tenant-a'),
+      ))),
     );
     await tester.pumpAndSettle();
 
@@ -62,6 +90,8 @@ void main() {
     await service.enqueue('task_status_update', {
       'id': 'task-waiting',
       'status': 'ACCEPTED',
+      'actorUid': 'operator-a',
+      'tenantId': 'tenant-a',
       'idempotencyKey': 'task-waiting-key',
     });
     var attempts = 0;
@@ -77,7 +107,9 @@ void main() {
     );
 
     await tester.pumpWidget(
-      const MaterialApp(home: Scaffold(body: OfflineSyncStatusPanel())),
+      MaterialApp(home: Scaffold(body: OfflineSyncStatusPanel(
+        identityProvider: () => (uid: 'operator-a', tenantId: 'tenant-a'),
+      ))),
     );
     await tester.pumpAndSettle();
     expect(find.text('1 in attesa · 0 da risolvere'), findsOneWidget);
@@ -103,6 +135,8 @@ void main() {
     await service.enqueue('task_status_update', {
       'id': 'task-failed',
       'status': 'ACCEPTED',
+      'actorUid': 'operator-a',
+      'tenantId': 'tenant-a',
       'idempotencyKey': 'task-failed-key',
     });
     await service.start(
@@ -116,7 +150,9 @@ void main() {
     );
 
     await tester.pumpWidget(
-      const MaterialApp(home: Scaffold(body: OfflineSyncStatusPanel())),
+      MaterialApp(home: Scaffold(body: OfflineSyncStatusPanel(
+        identityProvider: () => (uid: 'operator-a', tenantId: 'tenant-a'),
+      ))),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('0 in attesa · 1 da risolvere'));
@@ -151,7 +187,9 @@ void main() {
       expect(service.queueCorrupted, isTrue);
 
       await tester.pumpWidget(
-        const MaterialApp(home: Scaffold(body: OfflineSyncStatusPanel())),
+        MaterialApp(home: Scaffold(body: OfflineSyncStatusPanel(
+        identityProvider: () => (uid: 'operator-a', tenantId: 'tenant-a'),
+      ))),
       );
       await tester.pump();
 
@@ -169,3 +207,4 @@ void main() {
     },
   );
 }
+
