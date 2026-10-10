@@ -94,6 +94,13 @@ class _TasksScreenState extends State<TasksScreen> with WidgetsBindingObserver {
     setState(() => _busy.add(task.id));
     try {
       if (action == 'CHECKED_IN') {
+        if (task.status == 'ACCEPTED') {
+          if (widget.changeStatus != null) {
+            await widget.changeStatus!(task.id, 'EN_ROUTE');
+          } else {
+            await ApiService.instance.updateTaskStatus(task.id, 'EN_ROUTE');
+          }
+        }
         if (widget.checkIn != null) {
           await widget.checkIn!(task.id);
         } else {

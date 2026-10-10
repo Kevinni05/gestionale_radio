@@ -303,7 +303,10 @@ class ApiService {
       headers: await _headers,
     ).timeout(const Duration(seconds: 20));
     _check(response, 'Impossibile caricare le note antenna.');
-    return Map<String, dynamic>.from(_data(response));
+    final data = _data(response);
+    return data is List
+        ? {'notes': data}
+        : Map<String, dynamic>.from(data as Map);
   }
 
   Future<void> addAntennaNote(String id, String text) async {

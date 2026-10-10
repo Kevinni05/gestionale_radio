@@ -1610,7 +1610,7 @@ class AntennaMapScreen extends StatelessWidget {
                     },
                     child: Container(
                       decoration: BoxDecoration(
-                        color: AppColors.cyan,
+                        color: const Color(0xFF16A34A),
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(

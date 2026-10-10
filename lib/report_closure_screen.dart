@@ -117,6 +117,28 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
       unawaited(_restorePendingSubmission());
     }
     unawaited(_loadInventory());
+    unawaited(_loadAntennaChecklist());
+  }
+
+  Future<void> _loadAntennaChecklist() async {
+    if (widget.antennaId.trim().isEmpty ||
+        widget.antennaId == 'GENERICO') {
+      return;
+    }
+    try {
+      final antenna = await ApiService.instance.getAntennaDetails(widget.antennaId);
+      final raw = antenna['checklist_template'] ?? antenna['checklistTemplate'];
+      if (raw is! List || !mounted) return;
+      setState(() {
+        for (final item in raw) {
+          if (item is String && item.trim().isNotEmpty) {
+            _checks.putIfAbsent(item.trim(), () => false);
+          }
+        }
+      });
+    } catch (_) {
+      // Preserve editable report and existing draft when offline.
+    }
   }
 
   void _normalizeLegacyParts() {
