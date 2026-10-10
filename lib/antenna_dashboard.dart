@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'asset_history_screen.dart';
 import 'checklist_screen.dart';
+import 'report_closure_screen.dart';
 import 'models/antenna.dart';
 import 'providers/antenna_provider.dart';
 import 'services/api_service.dart';
@@ -202,23 +203,6 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
                 antenna.longitude.toStringAsFixed(5),
               ),
               const SizedBox(height: 24),
-              _buildSectionTitle(context, 'Note condivise'),
-              FutureBuilder<Map<String, dynamic>>(
-                future: _notes,
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) return const Text('Note non disponibili: servizio da configurare.');
-                  if (!snapshot.hasData) return const LinearProgressIndicator();
-                  final notes = snapshot.data!['notes'];
-                  final items = notes is List ? notes : const [];
-                  return Column(children: [
-                    for (final note in items)
-                      if (note is Map) Card(child: ListTile(title: Text((note['text'] ?? '').toString()), subtitle: Text((note['createdAt'] ?? '').toString()))),
-                    TextField(controller: _noteInput, maxLines: 3, maxLength: 2000, decoration: const InputDecoration(labelText: 'Nota condivisa', border: OutlineInputBorder())),
-                    Align(alignment: Alignment.centerRight, child: FilledButton.icon(onPressed: _saving ? null : _saveNote, icon: const Icon(Icons.save_outlined), label: const Text('Salva nota'))),
-                  ]);
-                },
-              ),
-              const SizedBox(height: 24),
               _buildSectionTitle(context, 'Controlli obbligatori'),
               const SizedBox(height: 12),
               _buildChecklistSummary(context, antenna.checklistTemplate),
@@ -247,6 +231,39 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
                 },
               ),
               ),
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => ReportClosureScreen(
+                      antennaId: antenna.id,
+                      checklistResults: {
+                        for (final item in antenna.checklistTemplate) item: false,
+                      },
+                    ),
+                  ),
+                ),
+                icon: const Icon(Icons.note_add_outlined),
+                label: const Text('Crea nuovo report'),
+              ),
+              const SizedBox(height: 28),
+              _buildSectionTitle(context, 'Note condivise'),
+              FutureBuilder<Map<String, dynamic>>(
+                future: _notes,
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) return const Text('Note non disponibili: servizio da configurare.');
+                  if (!snapshot.hasData) return const LinearProgressIndicator();
+                  final notes = snapshot.data!['notes'];
+                  final items = notes is List ? notes : const [];
+                  return Column(children: [
+                    for (final note in items)
+                      if (note is Map) Card(child: ListTile(title: Text((note['text'] ?? '').toString()), subtitle: Text((note['createdAt'] ?? '').toString()))),
+                    TextField(controller: _noteInput, maxLines: 3, maxLength: 2000, decoration: const InputDecoration(labelText: 'Nota condivisa', border: OutlineInputBorder())),
+                    Align(alignment: Alignment.centerRight, child: FilledButton.icon(onPressed: _saving ? null : _saveNote, icon: const Icon(Icons.save_outlined), label: const Text('Salva nota'))),
+                  ]);
+                },
+              ),
+              const SizedBox(height: 24),
               const SizedBox(height: 34),
               _buildActionButton(context, antenna),
               const SizedBox(height: 12),
