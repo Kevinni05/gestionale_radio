@@ -26,7 +26,7 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
     super.initState();
     _animationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 260),
     );
     _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
@@ -66,7 +66,7 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
           backgroundColor: Colors.transparent,
           elevation: 0,
           pinned: true,
-          expandedHeight: 220,
+          expandedHeight: 170,
           flexibleSpace: FlexibleSpaceBar(
             background: Container(
               decoration: BoxDecoration(
@@ -86,11 +86,11 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      antenna.name.toUpperCase(),
+                      antenna.name,
                       style: TextStyle(
-                        fontSize: 28,
+                        fontSize: 26,
                         fontWeight: FontWeight.w700,
-                        letterSpacing: 2.2,
+                        letterSpacing: 0.2,
                         color: Theme.of(context).primaryColor,
                         shadows: [
                           Shadow(
@@ -102,6 +102,8 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
                         ],
                       ),
                       textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 10),
                     Container(
@@ -186,14 +188,15 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
               const SizedBox(height: 28),
               _buildSectionTitle(context, 'Specifiche tecniche'),
               const SizedBox(height: 16),
-              GridView.builder(
+              LayoutBuilder(
+                builder: (context, constraints) => GridView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                  childAspectRatio: 1.35,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: constraints.maxWidth >= 650 ? 3 : constraints.maxWidth < 340 ? 1 : 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  mainAxisExtent: 144,
                 ),
                 itemCount: specCards.length,
                 itemBuilder: (context, index) {
@@ -205,6 +208,7 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
                     index,
                   );
                 },
+              ),
               ),
               const SizedBox(height: 34),
               _buildActionButton(context, antenna),
