@@ -74,6 +74,10 @@ jobs:
       - name: Compile Android QA application
         run: flutter build apk --debug --no-pub --target-platform android-arm64 --dart-define-from-file=config/render.json
 
+      - name: Native transactional storage and cryptography tests
+        working-directory: android
+        run: bash gradlew :app:testDebugUnitTest --no-daemon
+
       - name: Store QA artifact
         uses: actions/upload-artifact@v4
         with:

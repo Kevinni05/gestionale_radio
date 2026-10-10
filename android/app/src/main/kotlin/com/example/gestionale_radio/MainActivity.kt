@@ -15,6 +15,24 @@ class MainActivity : FlutterActivity() {
  private var pdfBytes: ByteArray? = null
  override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
   super.configureFlutterEngine(flutterEngine)
+  val localDataWorker = java.util.concurrent.Executors.newSingleThreadExecutor()
+  var localData: ProtectedLocalStore? = null
+  MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "radiotech/local-data").setMethodCallHandler { call, result ->
+   localDataWorker.execute {
+    try {
+     val store = localData ?: ProtectedLocalStore(applicationContext).also { localData = it }
+     val value: Any? = when (call.method) {
+      "read" -> store.read(call.argument<String>("key") ?: throw IllegalArgumentException())
+      "writeAll" -> { store.writeAll(call.argument<Map<String, String>>("values") ?: throw IllegalArgumentException()); null }
+      "removeAll" -> { store.removeAll(call.argument<List<String>>("keys") ?: throw IllegalArgumentException()); null }
+      else -> throw IllegalArgumentException()
+     }
+     runOnUiThread { result.success(value) }
+    } catch (error: Exception) {
+     runOnUiThread { result.error("LOCAL_DATA_UNAVAILABLE", "Dati locali non disponibili. Non reinstallare l’app: conserva i dati e contatta il supporto.", null) }
+    }
+   }
+  }
   MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "radiotech/updates").setMethodCallHandler { call, result ->
    try {
     when (call.method) {

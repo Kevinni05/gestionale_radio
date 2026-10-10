@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:shared_preferences/shared_preferences.dart';
+import 'protected_local_store.dart';
 
 class ReportDraftStore {
   static Future<void> _writes = Future<void>.value();
@@ -22,8 +22,7 @@ class ReportDraftStore {
   }
 
   Future<Map<String, dynamic>?> load(String key) async {
-    final preferences = await SharedPreferences.getInstance();
-    final raw = preferences.getString(key);
+    final raw = await ProtectedLocalStore.read(key);
     if (raw == null || raw.isEmpty) return null;
 
     try {
@@ -40,19 +39,13 @@ class ReportDraftStore {
   Future<void> save(String key, Map<String, dynamic> draft) async {
     final encoded = jsonEncode(draft);
     await _write(() async {
-      final preferences = await SharedPreferences.getInstance();
-      if (!await preferences.setString(key, encoded)) {
-        throw StateError('Salvataggio bozza non riuscito. Invio sospeso.');
-      }
+      await ProtectedLocalStore.writeAll({key: encoded});
     });
   }
 
   Future<void> delete(String key) async {
     await _write(() async {
-      final preferences = await SharedPreferences.getInstance();
-      if (!await preferences.remove(key)) {
-        throw StateError('Rimozione bozza non riuscita.');
-      }
+      await ProtectedLocalStore.removeAll([key]);
     });
   }
 }

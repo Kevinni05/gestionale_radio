@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'support/protected_local_mock.dart';
 
 import 'package:gestionale_radio/services/offline_sync_service.dart';
 import 'package:gestionale_radio/widgets/offline_sync_status_panel.dart';
@@ -172,7 +173,7 @@ void main() {
   testWidgets(
     'unrecoverable queue corruption is visible and does not crash startup',
     (tester) async {
-      final preferences = await SharedPreferences.getInstance();
+      final preferences = ProtectedTestRecords();
       await preferences.setString('offline_sync_queue', '{broken-primary');
       await preferences.setString(
         'offline_sync_queue_backup',
@@ -197,9 +198,9 @@ void main() {
         find.textContaining('La coda offline è danneggiata'),
         findsOneWidget,
       );
-      expect(preferences.getString('offline_sync_queue'), '{broken-primary');
+      expect(await preferences.getString('offline_sync_queue'), '{broken-primary');
       expect(
-        preferences.getString('offline_sync_queue_backup'),
+        await preferences.getString('offline_sync_queue_backup'),
         '{broken-backup',
       );
       await tester.pumpWidget(const SizedBox.shrink());

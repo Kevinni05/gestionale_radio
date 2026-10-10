@@ -49,16 +49,16 @@ void main() {
     final confirmed = await signal.deliver((_) async {});
     final store = ReportDraftStore();
     await Future.wait([
-      store.save('draft', {'urgentSignal': signal.toJson()}),
-      ReportDraftStore().save('draft', {'urgentSignal': confirmed.toJson()}),
+      store.save('report_draft_test', {'urgentSignal': signal.toJson()}),
+      ReportDraftStore().save('report_draft_test', {'urgentSignal': confirmed.toJson()}),
     ]);
-    expect(((await store.load('draft'))!['urgentSignal'] as Map)['confirmed'], isTrue);
+    expect(((await store.load('report_draft_test'))!['urgentSignal'] as Map)['confirmed'], isTrue);
     expect(jsonEncode(signal.toJson()), contains(signal.operationId));
   });
 
   test('corrupt persisted draft fails closed instead of allocating another signal', () async {
-    SharedPreferences.setMockInitialValues({'draft': '{invalid'});
-    await expectLater(ReportDraftStore().load('draft'), throwsStateError);
+    SharedPreferences.setMockInitialValues({'report_draft_test': '{invalid'});
+    await expectLater(ReportDraftStore().load('report_draft_test'), throwsStateError);
     expect(() => UrgentReportSignal.fromJson({'operationId': ''}), throwsFormatException);
   });
 }

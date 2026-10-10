@@ -29,6 +29,13 @@ gradle.taskGraph.whenReady {
 android {
     namespace = "com.example.gestionale_radio"
     compileSdk = 36
+    testOptions {
+        unitTests.all {
+            it.jvmArgs("--add-opens=java.base/java.lang=ALL-UNNAMED", "--add-opens=java.base/java.util=ALL-UNNAMED",
+                "--add-opens=java.base/java.io=ALL-UNNAMED", "--add-opens=java.base/java.net=ALL-UNNAMED",
+                "--add-opens=java.base/java.security=ALL-UNNAMED")
+        }
+    }
 
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
@@ -68,6 +75,8 @@ android {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.16")
 }
 
 // Questo singolo blocco moderno sostituisce tutta la vecchia configurazione Java e Kotlin

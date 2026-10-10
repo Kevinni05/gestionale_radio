@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:shared_preferences/shared_preferences.dart';
+import 'protected_local_store.dart';
 
 class SyncDeferredException implements Exception {
   const SyncDeferredException();
@@ -231,7 +231,7 @@ class OfflineSyncService {
         await _persistQueue(current);
       });
 
-  Future<String> persistentIdempotencyKey(String scope) async {
+  Future<String> persistentIdempotencyKey(String scope) => _serialize(() async {
     if (scope.isEmpty) {
       throw ArgumentError.value(
         scope,
@@ -239,9 +239,8 @@ class OfflineSyncService {
         'Lo scope della chiave è obbligatorio.',
       );
     }
-    final preferences = await SharedPreferences.getInstance();
     final preferenceKey = 'offline_idempotency_$scope';
-    final existing = preferences.getString(preferenceKey);
+    final existing = await ProtectedLocalStore.read(preferenceKey);
     if (existing != null && existing.isNotEmpty) return existing;
 
     final random = math.Random.secure();
@@ -249,13 +248,12 @@ class OfflineSyncService {
     final generated = entropy
         .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
         .join();
-    await preferences.setString(preferenceKey, generated);
+    await ProtectedLocalStore.writeAll({preferenceKey: generated});
     return generated;
-  }
+  });
 
   Future<void> clearPersistentIdempotencyKey(String scope) async {
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.remove('offline_idempotency_$scope');
+    await ProtectedLocalStore.removeAll(['offline_idempotency_$scope']);
   }
 
   Future<List<QueuedSyncAction>> pending() async {
@@ -274,9 +272,7 @@ class OfflineSyncService {
   });
 
   Future<void> clear() => _serialize(() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_queueKey);
-    await prefs.remove(_queueBackupKey);
+    await ProtectedLocalStore.removeAll([_queueKey, _queueBackupKey]);
     _queueCorrupted = false;
   });
 
@@ -366,9 +362,8 @@ class OfflineSyncService {
   }
 
   Future<List<QueuedSyncAction>> _loadQueue() async {
-    final prefs = await SharedPreferences.getInstance();
-    final primaryRaw = prefs.getString(_queueKey);
-    final backupRaw = prefs.getString(_queueBackupKey);
+    final primaryRaw = await ProtectedLocalStore.read(_queueKey);
+    final backupRaw = await ProtectedLocalStore.read(_queueBackupKey);
     final hasPrimary = primaryRaw != null && primaryRaw.trim().isNotEmpty;
     final hasBackup = backupRaw != null && backupRaw.trim().isNotEmpty;
     final primary = hasPrimary ? _decodeSnapshot(primaryRaw) : null;
@@ -395,11 +390,8 @@ class OfflineSyncService {
 
     // Repair only a stale or corrupt slot. A read must never replace a newer
     // recovery copy with an older queue revision.
-    if (primary?.encoded != selected.encoded) {
-      await prefs.setString(_queueKey, selected.encoded);
-    }
-    if (backup?.encoded != selected.encoded) {
-      await prefs.setString(_queueBackupKey, selected.encoded);
+    if (primary?.encoded != selected.encoded || backup?.encoded != selected.encoded) {
+      await ProtectedLocalStore.writeAll({_queueKey: selected.encoded, _queueBackupKey: selected.encoded});
     }
     return List<QueuedSyncAction>.from(selected.items);
   }
@@ -453,9 +445,8 @@ class OfflineSyncService {
     if (queue.length > maxQueueItems) {
       throw StateError('Coda offline oltre il limite consentito.');
     }
-    final prefs = await SharedPreferences.getInstance();
-    final primary = _decodeSnapshot(prefs.getString(_queueKey));
-    final backup = _decodeSnapshot(prefs.getString(_queueBackupKey));
+    final primary = _decodeSnapshot(await ProtectedLocalStore.read(_queueKey));
+    final backup = _decodeSnapshot(await ProtectedLocalStore.read(_queueBackupKey));
     final revision =
         math.max(primary?.revision ?? 0, backup?.revision ?? 0) + 1;
     final encoded = jsonEncode({
@@ -464,14 +455,8 @@ class OfflineSyncService {
       'items': queue.map((entry) => entry.toJson()).toList(growable: false),
     });
 
-    // Write the recovery slot first. If the process stops between writes, the
-    // next read selects the newer revision and repairs the stale slot.
-    if (!await prefs.setString(_queueBackupKey, encoded)) {
-      throw StateError('Impossibile salvare il backup della coda offline.');
-    }
-    if (!await prefs.setString(_queueKey, encoded)) {
-      throw StateError('Impossibile salvare la coda offline.');
-    }
+    // Both slots commit in the same native SQLite transaction.
+    await ProtectedLocalStore.writeAll({_queueKey: encoded, _queueBackupKey: encoded});
   }
 
   Future<void> _replace(String id, QueuedSyncAction updated) =>

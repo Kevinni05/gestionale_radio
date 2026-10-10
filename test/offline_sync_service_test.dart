@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'support/protected_local_mock.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -172,7 +173,7 @@ void main() {
         'idempotencyKey': 'request-recoverable',
       });
 
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = ProtectedTestRecords();
       await prefs.setString('offline_sync_queue', '{not-valid-json');
 
       final pending = await service.pending();
@@ -187,7 +188,7 @@ void main() {
     () async {
       final service = OfflineSyncService.instance;
       await service.clear();
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = ProtectedTestRecords();
       final primary = {
         'version': 2,
         'revision': 3,
@@ -228,8 +229,8 @@ void main() {
       expect(pending.single.id, 'new_action');
       expect(pending.single.payload['id'], 'new-task');
       expect(
-        prefs.getString('offline_sync_queue'),
-        prefs.getString('offline_sync_queue_backup'),
+        await prefs.getString('offline_sync_queue'),
+        await prefs.getString('offline_sync_queue_backup'),
       );
     },
   );
@@ -239,7 +240,7 @@ void main() {
     () async {
       final service = OfflineSyncService.instance;
       await service.clear();
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = ProtectedTestRecords();
       final validBackup = {
         'version': 2,
         'revision': 7,
@@ -294,11 +295,11 @@ void main() {
       'status': 'ACCEPTED',
     });
 
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = ProtectedTestRecords();
     final primary =
-        jsonDecode(prefs.getString('offline_sync_queue')!) as Map;
+        jsonDecode((await prefs.getString('offline_sync_queue'))!) as Map;
     final backup =
-        jsonDecode(prefs.getString('offline_sync_queue_backup')!) as Map;
+        jsonDecode((await prefs.getString('offline_sync_queue_backup'))!) as Map;
 
     expect(primary['version'], 2);
     expect(primary['revision'], isA<int>());
@@ -311,7 +312,7 @@ void main() {
     'queue corruption without a valid backup is surfaced without deletion',
     () async {
       final service = OfflineSyncService.instance;
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = ProtectedTestRecords();
       const primary = '{corrupted-primary';
       const backup = '{corrupted-backup';
       await prefs.setString('offline_sync_queue', primary);
@@ -319,8 +320,8 @@ void main() {
 
       await expectLater(service.pending(), throwsStateError);
 
-      expect(prefs.getString('offline_sync_queue'), primary);
-      expect(prefs.getString('offline_sync_queue_backup'), backup);
+      expect(await prefs.getString('offline_sync_queue'), primary);
+      expect(await prefs.getString('offline_sync_queue_backup'), backup);
     },
   );
 
@@ -328,15 +329,15 @@ void main() {
     'corrupt primary queue without a backup is not replaced by an empty queue',
     () async {
       final service = OfflineSyncService.instance;
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = ProtectedTestRecords();
       const primary = '{corrupted-primary-without-backup';
       await prefs.setString('offline_sync_queue', primary);
       await prefs.remove('offline_sync_queue_backup');
 
       await expectLater(service.pending(), throwsStateError);
 
-      expect(prefs.getString('offline_sync_queue'), primary);
-      expect(prefs.getString('offline_sync_queue_backup'), isNull);
+      expect(await prefs.getString('offline_sync_queue'), primary);
+      expect(await prefs.getString('offline_sync_queue_backup'), isNull);
     },
   );
 
