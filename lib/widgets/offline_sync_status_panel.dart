@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../services/api_service.dart';
 import '../services/offline_sync_service.dart';
@@ -25,6 +26,7 @@ class _OfflineSyncStatusPanelState extends State<OfflineSyncStatusPanel> {
   final OfflineSyncService _service = OfflineSyncService.instance;
   List<QueuedSyncAction> _actions = [];
   bool _queueCorrupted = false;
+  bool _storageUnavailable = false;
   Timer? _refreshTimer;
 
   @override
@@ -72,10 +74,18 @@ class _OfflineSyncStatusPanelState extends State<OfflineSyncStatusPanel> {
             )
             .toList();
       }
+    } on PlatformException {
+      if (!mounted) return;
+      setState(() {
+        _actions = [];
+        _storageUnavailable = true;
+      });
+      return;
     } on StateError {
       if (!mounted) return;
       setState(() {
         _actions = [];
+        _storageUnavailable = false;
         _queueCorrupted = true;
       });
       return;
@@ -83,12 +93,22 @@ class _OfflineSyncStatusPanelState extends State<OfflineSyncStatusPanel> {
     if (!mounted) return;
     setState(() {
       _actions = actions;
+      _storageUnavailable = false;
       _queueCorrupted = _service.queueCorrupted;
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_storageUnavailable) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 14),
+        child: Column(children: [
+          const Text('Dati locali non disponibili. I dati sono conservati: non reinstallare l’app. Contatta il supporto se il problema persiste.'),
+          TextButton(onPressed: _refresh, child: const Text('Riprova l’accesso ai dati')),
+        ]),
+      );
+    }
     if (_queueCorrupted) {
       return const Padding(
         padding: EdgeInsets.only(top: 14),

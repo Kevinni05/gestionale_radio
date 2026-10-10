@@ -47,6 +47,19 @@ internal class ProtectedLocalStore(context: Context, private val cipher: LocalDa
     SQLiteOpenHelper(context, "operational-data.db", null, 1) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE records (record_id TEXT PRIMARY KEY, nonce BLOB NOT NULL, ciphertext BLOB NOT NULL)")
+        val proof = cipher.encrypt("__key_check", "radiotech-local-key-v1")
+        val record = ContentValues().apply {
+            put("record_id", id("__key_check")); put("nonce", proof.first); put("ciphertext", proof.second)
+        }
+        check(db.insertOrThrow("records", null, record) != -1L)
+    }
+    override fun onOpen(db: SQLiteDatabase) {
+        super.onOpen(db)
+        // A lost/replaced key must block even writes to a new record, preserving the existing database.
+        db.query("records", arrayOf("nonce", "ciphertext"), "record_id=?", arrayOf(id("__key_check")), null, null, null).use {
+            check(it.moveToFirst()) { "Local key proof unavailable" }
+            check(cipher.decrypt("__key_check", it.getBlob(0), it.getBlob(1)) == "radiotech-local-key-v1")
+        }
     }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         throw IllegalStateException("Unsupported local data schema; preserve existing data")
@@ -78,6 +91,7 @@ internal class ProtectedLocalStore(context: Context, private val cipher: LocalDa
         try {
             values.forEach { (key, value) ->
                 validate(key)
+                read(key) // Refuse to overwrite a record whose authentication has failed.
                 require(value.toByteArray(Charsets.UTF_8).size <= 8_000_000)
                 val encrypted = cipher.encrypt(key, value)
                 val record = ContentValues().apply {

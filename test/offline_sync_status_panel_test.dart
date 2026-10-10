@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'support/protected_local_mock.dart';
@@ -39,6 +41,26 @@ void main() {
       expect(find.textContaining('Private tenant A report'), findsNothing);
     }
     expect(await tester.runAsync(() => service.pending()), hasLength(1));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('unavailable native data is preserved and surfaced with a retry action', (tester) async {
+    const channel = MethodChannel('radiotech/local-data');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMessageHandler(
+      channel.name,
+      (_) => SynchronousFuture(channel.codec.encodeErrorEnvelope(code: 'LOCAL_DATA_UNAVAILABLE')),
+    );
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: OfflineSyncStatusPanel(
+      identityProvider: () => (uid: 'operator-a', tenantId: 'tenant-a'),
+    ))));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('non reinstallare'), findsOneWidget);
+    expect(find.text('Riprova l’accesso ai dati'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    installProtectedLocalMock();
+    await tester.tap(find.text('Riprova l’accesso ai dati'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('non reinstallare'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

@@ -1,27 +1,34 @@
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gestionale_radio/services/protected_local_store.dart';
 
 // Native boundary fake only. Actual SQLite/cipher behavior is tested in Kotlin.
 void installProtectedLocalMock() {
   final records = <String,String>{};
+  const channel = MethodChannel('radiotech/local-data');
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-      .setMockMethodCallHandler(const MethodChannel('radiotech/local-data'), (call) async {
+      .setMockMessageHandler(channel.name, (message) {
+    final call = channel.codec.decodeMethodCall(message);
     final arguments = Map<Object?, Object?>.from(call.arguments as Map);
+    Object? response;
     switch (call.method) {
       case 'read':
-        return records[arguments['key']];
+        response = records[arguments['key']];
+        break;
       case 'writeAll':
         final values = Map<String, String>.from(arguments['values'] as Map);
         records.addAll(values);
-        return null;
+        break;
       case 'removeAll':
         for (final key in arguments['keys'] as List) {
           records.remove(key);
         }
-        return null;
+        break;
+      default:
+        return SynchronousFuture(channel.codec.encodeErrorEnvelope(code: 'NOT_IMPLEMENTED'));
     }
-    throw MissingPluginException();
+    return SynchronousFuture(channel.codec.encodeSuccessEnvelope(response));
   });
 }
 

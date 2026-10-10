@@ -39,8 +39,14 @@ class ProtectedLocalStoreTest {
         assertEquals("before", store.read("offline_sync_queue"))
         assertEquals("before", store.read("offline_sync_queue_backup"))
         store.close()
+        val wrongKeyStore = ProtectedLocalStore(context, cipher())
+        assertThrows(Exception::class.java) {
+            wrongKeyStore.writeAll(mapOf("report_draft_new" to "must not commit with a replacement key"))
+        }
+        wrongKeyStore.close()
         store = ProtectedLocalStore(context, cipher)
         assertEquals("before", store.read("offline_sync_queue"))
+        assertNull(store.read("report_draft_new"))
         store.readableDatabase.rawQuery("SELECT ciphertext FROM records", null).use {
             assertTrue(it.moveToFirst())
             assertFalse(String(it.getBlob(0), Charsets.UTF_8).contains("before"))
