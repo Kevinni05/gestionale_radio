@@ -3,6 +3,14 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ReportDraftStore {
+  static Future<void> _writes = Future<void>.value();
+
+  Future<void> _write(Future<void> Function() operation) {
+    final result = _writes.then((_) => operation());
+    // A failed save must reach its caller without poisoning subsequent writes.
+    _writes = result.catchError((Object _) {});
+    return result;
+  }
   static String storageKey({
     required String tenantId,
     required String operatorUid,
@@ -20,21 +28,32 @@ class ReportDraftStore {
 
     try {
       final decoded = jsonDecode(raw);
-      return decoded is Map<String, dynamic>
-          ? Map<String, dynamic>.from(decoded)
-          : null;
+      if (decoded is! Map<String, dynamic>) {
+        throw const FormatException('Bozza non valida.');
+      }
+      return Map<String, dynamic>.from(decoded);
     } catch (_) {
-      return null;
+      throw StateError('Bozza non leggibile. Recuperala prima di creare un nuovo invio.');
     }
   }
 
   Future<void> save(String key, Map<String, dynamic> draft) async {
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.setString(key, jsonEncode(draft));
+    final encoded = jsonEncode(draft);
+    await _write(() async {
+      final preferences = await SharedPreferences.getInstance();
+      if (!await preferences.setString(key, encoded)) {
+        throw StateError('Salvataggio bozza non riuscito. Invio sospeso.');
+      }
+    });
   }
 
   Future<void> delete(String key) async {
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.remove(key);
+    await _write(() async {
+      final preferences = await SharedPreferences.getInstance();
+      if (!await preferences.remove(key)) {
+        throw StateError('Rimozione bozza non riuscita.');
+      }
+    });
   }
 }
+

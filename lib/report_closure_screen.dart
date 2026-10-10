@@ -18,6 +18,7 @@ import 'services/local_report_attachment_store.dart';
 import 'services/report_draft_store.dart';
 import 'services/session_service.dart';
 import 'services/report_submission_state.dart';
+import 'services/urgent_report_signal.dart';
 import 'widgets/offline_sync_status_panel.dart';
 
 class ReportClosureScreen extends StatefulWidget {
@@ -80,6 +81,8 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
   Timer? _draftSaveTimer;
   String? _draftKey;
   final ReportDraftStore _draftStore = ReportDraftStore();
+  Future<void> _draftReady = Future<void>.value();
+  UrgentReportSignal? _urgentSignal;
   final LocalReportAttachmentStore _attachmentStore =
       LocalReportAttachmentStore();
 
@@ -113,7 +116,9 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
         operatorUid: uid,
         taskScope: widget.taskId ?? widget.antennaId,
       );
-      unawaited(_restoreDraft());
+      _draftReady = _restoreDraft();
+      // The same future is awaited before submit; keep restoration errors visible there.
+      unawaited(_draftReady.catchError((Object _) {}));
       unawaited(_restorePendingSubmission());
     }
     unawaited(_loadInventory());
@@ -372,6 +377,7 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
       'checklist': Map<String, bool>.of(_checks),
       'centralAlert': _centralAlertController.text,
       'hasCentralAlert': _hasCentralAlert,
+      if (_urgentSignal != null) 'urgentSignal': _urgentSignal!.toJson(),
       'parts': Map<String, int>.from(_partsUsed),
       'measurements': _measurementRows
           .map(
@@ -416,6 +422,14 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
     _notesController.text = draft['notes']?.toString() ?? '';
     _centralAlertController.text = draft['centralAlert']?.toString() ?? '';
     _hasCentralAlert = draft['hasCentralAlert'] == true;
+    if (draft['urgentSignal'] is Map) {
+      _urgentSignal = UrgentReportSignal.fromJson(
+        Map<String, dynamic>.from(draft['urgentSignal'] as Map),
+      );
+      // A timed-out request may already have reached the server. Replay its exact payload.
+      _hasCentralAlert = true;
+      _centralAlertController.text = _urgentSignal!.description;
+    }
 
     final rawParts = draft['parts'];
     if (rawParts is Map) {
@@ -1321,7 +1335,7 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
           Switch(
             value: _hasCentralAlert,
             activeThumbColor: Theme.of(context).colorScheme.secondary,
-            onChanged: _toggleCentralAlert,
+            onChanged: _urgentSignal == null ? _toggleCentralAlert : null,
           ),
         ],
       ),
@@ -1331,9 +1345,16 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
   Widget _buildCentralAlertField(BuildContext context) {
     return TextField(
       controller: _centralAlertController,
+      readOnly: _urgentSignal != null,
       maxLines: 3,
       style: const TextStyle(color: Colors.white, fontSize: 14),
       decoration: InputDecoration(
+        helperText: _urgentSignal == null
+            ? null
+            : _urgentSignal!.confirmed
+                ? 'Segnalazione ricevuta dalla centrale. Il report può essere riprovato.'
+                : 'Segnalazione preparata. Ricezione non ancora confermata.',
+        helperMaxLines: 3,
         filled: true,
         fillColor: Theme.of(
           context,
@@ -1472,6 +1493,8 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
     if (_isSubmitting || !_isFormValid && !_reportQueued) return;
     setState(() => _isSubmitting = true);
     try {
+      await _draftReady;
+      if (!mounted) return;
       FocusScope.of(context).unfocus();
       setState(() => _submissionError = null);
       _draftSaveTimer?.cancel();
@@ -1519,7 +1542,8 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
         'checklist': _checks,
         'description': _notesController.text.trim(),
         'workPerformed': _notesController.text.trim(),
-        'findings': _hasCentralAlert ? _centralAlertController.text.trim() : '',
+        'findings': _urgentSignal?.description ??
+            (_hasCentralAlert ? _centralAlertController.text.trim() : ''),
         'operatorNotes': _notesController.text.trim(),
         'materialsUsed': materials,
         'measurements': measurements,
@@ -1547,7 +1571,8 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
         submittedAt: submittedAt,
         taskId: widget.taskId,
         notes: _notesController.text.trim(),
-        findings: _hasCentralAlert ? _centralAlertController.text.trim() : '',
+        findings: _urgentSignal?.description ??
+            (_hasCentralAlert ? _centralAlertController.text.trim() : ''),
         checklist: _checks,
         materials: materials,
         measurements: measurements,
@@ -1557,13 +1582,29 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
       attachmentBytes['report_${DateTime.now().microsecondsSinceEpoch}.pdf'] =
           pdfBytes;
 
-      if (_hasCentralAlert) {
-        _stage('Invio comunicazione urgente alla centrale…');
-        await ApiService.instance.sendCentralUrgentSignal(
+      if (_hasCentralAlert || _urgentSignal != null) {
+        if (_draftKey == null) {
+          throw StateError('Accedi prima di inviare la segnalazione urgente.');
+        }
+        _urgentSignal ??= UrgentReportSignal.prepare(
           description: _centralAlertController.text,
           assetId: widget.antennaId,
           taskId: widget.taskId,
         );
+        await _saveDraft(force: true);
+        _stage('Invio comunicazione urgente alla centrale…');
+        _urgentSignal = await _urgentSignal!.deliver(
+          (signal) async {
+            await ApiService.instance.sendCentralUrgentSignal(
+              description: signal.description,
+              assetId: signal.assetId,
+              taskId: signal.taskId,
+              operationId: signal.operationId,
+            );
+          },
+        );
+        await _saveDraft(force: true);
+        _stage('Segnalazione ricevuta dalla centrale. Invio del report…');
       }
 
       _stage('Caricamento allegati e invio alla centrale…');
@@ -1696,3 +1737,4 @@ class _MeasurementRow {
     valueController.dispose();
   }
 }
+

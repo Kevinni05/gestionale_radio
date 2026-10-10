@@ -418,6 +418,7 @@ class ApiService {
     required String description,
     String? assetId,
     String? taskId,
+    String? operationId,
   }) async {
     final normalizedDescription = description.trim();
     if (normalizedDescription.isEmpty) {
@@ -440,7 +441,7 @@ class ApiService {
         ].join(' '),
         if (assetId != null && assetId.trim().isNotEmpty)
           'assetId': assetId.trim(),
-        'operationId': _newIdempotencyKey(),
+        'operationId': operationId ?? _newIdempotencyKey(),
       }),
     );
     _check(response, 'Invio segnalazione urgente alla centrale non riuscito.');
@@ -1154,3 +1155,4 @@ class _RetryableApiException implements Exception {
 
   final String message;
 }
+
