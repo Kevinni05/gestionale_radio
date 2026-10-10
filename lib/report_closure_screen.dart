@@ -122,7 +122,9 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
 
   Future<void> _loadAntennaChecklist() async {
     if (widget.antennaId.trim().isEmpty ||
-        widget.antennaId == 'GENERICO') return;
+        widget.antennaId == 'GENERICO') {
+      return;
+    }
     try {
       final antenna = await ApiService.instance.getAntennaDetails(widget.antennaId);
       final raw = antenna['checklist_template'] ?? antenna['checklistTemplate'];
