@@ -80,7 +80,13 @@ class _TasksScreenState extends State<TasksScreen> with WidgetsBindingObserver {
           builder: (_) =>
               widget.reportBuilder?.call(task) ??
               ReportClosureScreen(
-                checklistResults: const {},
+                checklistResults: {
+                  for (final item in (task.data['checklistTemplate'] is List
+                      ? task.data['checklistTemplate'] as List
+                      : const []))
+                    if (item is String && item.trim().isNotEmpty)
+                      item: false,
+                },
                 antennaId: task.antennaId ?? 'GENERICO',
                 taskId: task.id,
               ),
@@ -120,6 +126,12 @@ class _TasksScreenState extends State<TasksScreen> with WidgetsBindingObserver {
             longitude: position.longitude,
             accuracy: position.accuracy,
           );
+        }
+        // Preserve backend lifecycle transitions without extra operator taps.
+        if (widget.changeStatus != null) {
+          await widget.changeStatus!(task.id, 'IN_PROGRESS');
+        } else {
+          await ApiService.instance.updateTaskStatus(task.id, 'IN_PROGRESS');
         }
       } else {
         if (widget.changeStatus != null) {
@@ -377,9 +389,7 @@ class _TasksScreenState extends State<TasksScreen> with WidgetsBindingObserver {
   Widget _card(TaskSummary task, DateTime now) {
     const labels = {
       'ACCEPTED': 'Accetta incarico',
-      'EN_ROUTE': 'Inizia trasferimento',
       'CHECKED_IN': 'Check-in GPS',
-      'IN_PROGRESS': 'Inizia lavoro',
       'REPORT': 'Compila rapporto',
     };
     final due = task.dueAt;

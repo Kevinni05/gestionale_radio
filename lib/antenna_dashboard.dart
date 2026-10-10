@@ -5,6 +5,7 @@ import 'asset_history_screen.dart';
 import 'checklist_screen.dart';
 import 'models/antenna.dart';
 import 'providers/antenna_provider.dart';
+import 'services/api_service.dart';
 
 class AntennaDashboardScreen extends ConsumerStatefulWidget {
   final String antennaId;
@@ -19,14 +20,32 @@ class AntennaDashboardScreen extends ConsumerStatefulWidget {
 class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _animationController;
+  late Future<Map<String, dynamic>> _notes;
+  final _noteInput = TextEditingController();
+  bool _saving = false;
+  Future<Map<String, dynamic>> _fetchNotes() => ApiService.instance.getAntennaNotes(widget.antennaId);
+  Future<void> _saveNote() async {
+    if (_saving || _noteInput.text.trim().isEmpty) return;
+    setState(() => _saving = true);
+    try {
+      await ApiService.instance.addAntennaNote(widget.antennaId, _noteInput.text.trim());
+      _noteInput.clear();
+      if (mounted) setState(() => _notes = _fetchNotes());
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Salvataggio non riuscito: $e')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
   late final Animation<double> _fadeAnimation;
 
   @override
   void initState() {
     super.initState();
+    _notes = _fetchNotes();
     _animationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 260),
     );
     _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
@@ -37,6 +56,7 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
   @override
   void dispose() {
     _animationController.dispose();
+    _noteInput.dispose();
     super.dispose();
   }
 
@@ -66,7 +86,7 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
           backgroundColor: Colors.transparent,
           elevation: 0,
           pinned: true,
-          expandedHeight: 220,
+          expandedHeight: 170,
           flexibleSpace: FlexibleSpaceBar(
             background: Container(
               decoration: BoxDecoration(
@@ -86,11 +106,11 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      antenna.name.toUpperCase(),
+                      antenna.name,
                       style: TextStyle(
-                        fontSize: 28,
+                        fontSize: 26,
                         fontWeight: FontWeight.w700,
-                        letterSpacing: 2.2,
+                        letterSpacing: 0.2,
                         color: Theme.of(context).primaryColor,
                         shadows: [
                           Shadow(
@@ -102,6 +122,8 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
                         ],
                       ),
                       textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 10),
                     Container(
@@ -180,20 +202,38 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
                 antenna.longitude.toStringAsFixed(5),
               ),
               const SizedBox(height: 24),
+              _buildSectionTitle(context, 'Note condivise'),
+              FutureBuilder<Map<String, dynamic>>(
+                future: _notes,
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) return const Text('Note non disponibili: servizio da configurare.');
+                  if (!snapshot.hasData) return const LinearProgressIndicator();
+                  final notes = snapshot.data!['notes'];
+                  final items = notes is List ? notes : const [];
+                  return Column(children: [
+                    for (final note in items)
+                      if (note is Map) Card(child: ListTile(title: Text((note['text'] ?? '').toString()), subtitle: Text((note['createdAt'] ?? '').toString()))),
+                    TextField(controller: _noteInput, maxLines: 3, maxLength: 2000, decoration: const InputDecoration(labelText: 'Nota condivisa', border: OutlineInputBorder())),
+                    Align(alignment: Alignment.centerRight, child: FilledButton.icon(onPressed: _saving ? null : _saveNote, icon: const Icon(Icons.save_outlined), label: const Text('Salva nota'))),
+                  ]);
+                },
+              ),
+              const SizedBox(height: 24),
               _buildSectionTitle(context, 'Controlli obbligatori'),
               const SizedBox(height: 12),
               _buildChecklistSummary(context, antenna.checklistTemplate),
               const SizedBox(height: 28),
               _buildSectionTitle(context, 'Specifiche tecniche'),
               const SizedBox(height: 16),
-              GridView.builder(
+              LayoutBuilder(
+                builder: (context, constraints) => GridView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                  childAspectRatio: 1.35,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: constraints.maxWidth >= 650 ? 3 : constraints.maxWidth < 340 ? 1 : 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  mainAxisExtent: 144,
                 ),
                 itemCount: specCards.length,
                 itemBuilder: (context, index) {
@@ -205,6 +245,7 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
                     index,
                   );
                 },
+              ),
               ),
               const SizedBox(height: 34),
               _buildActionButton(context, antenna),

@@ -49,16 +49,14 @@ void main() {
       await tester.pumpAndSettle();
       for (final label in [
         'Accetta incarico',
-        'Inizia trasferimento',
         'Check-in GPS',
-        'Inizia lavoro',
       ]) {
         await tester.ensureVisible(find.text(label));
         await tester.tap(find.text(label));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
       }
-      expect(changes, ['ACCEPTED', 'EN_ROUTE', 'CHECKED_IN', 'IN_PROGRESS']);
+      expect(changes, ['ACCEPTED', 'CHECKED_IN', 'IN_PROGRESS']);
       await tester.ensureVisible(find.text('Compila rapporto'));
       await tester.tap(find.text('Compila rapporto'));
       await tester.pumpAndSettle();
@@ -152,7 +150,7 @@ void main() {
     'legacy statuses retain their execution actions and completed work awaits a report',
     () {
       expect(TaskSummary({'status': 'in corso'}).nextAction, 'REPORT');
-      expect(TaskSummary({'status': 'ACCETTATO'}).nextAction, 'EN_ROUTE');
+      expect(TaskSummary({'status': 'ACCETTATO'}).nextAction, 'CHECKED_IN');
       final completed = TaskSummary({'status': 'COMPLETED'});
       expect(completed.archived, isFalse);
       expect(completed.nextAction, 'REPORT');
