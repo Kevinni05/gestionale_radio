@@ -27,56 +27,36 @@ void main() {
       },
     ],
   };
-  testWidgets(
-    'AI shows personal evidence and chat sends only opted-in context',
-    (tester) async {
-      Map<String, dynamic>? submitted;
-      Future<dynamic> request(
-        String path, {
-        String method = 'GET',
-        Map<String, dynamic>? body,
-      }) async {
-        if (path == '/ai/insights') return insights;
-        if (path == '/ai/status') {
-          return {'enabled': true, 'model': 'test-local'};
-        }
-        submitted = body;
-        return {'answer': 'Risposta aziendale verificabile'};
-      }
+  testWidgets('preventive planning shows personal evidence without chat', (
+    tester,
+  ) async {
+    Future<dynamic> request(
+      String path, {
+      String method = 'GET',
+      Map<String, dynamic>? body,
+    }) async {
+      if (path == '/ai/insights') return insights;
+      fail('Unexpected request: $path');
+    }
 
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: RadioTechTheme.dark,
-          home: AiHubScreen(request: request),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('Ponte Bari'), findsOneWidget);
-      expect(
-        find.text('Storico insufficiente per stimare una data.'),
-        findsOneWidget,
-      );
-      await tester.tap(find.text('Assistente AI'));
-      await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(
-        find.widgetWithText(TextField, 'Chiedi all’assistente'),
-        200,
-        scrollable: find.byType(Scrollable).last,
-      );
-      await tester.enterText(
-        find.widgetWithText(TextField, 'Chiedi all’assistente'),
-        'Prepara un briefing',
-      );
-      await tester.ensureVisible(find.text('Invia messaggio'));
-      await tester.tap(find.text('Invia messaggio'));
-      await tester.pumpAndSettle();
-      expect(submitted?['includeOperationalContext'], false);
-      expect(submitted?['message'], 'Prepara un briefing');
-      expect(find.text('Risposta aziendale verificabile'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    },
-  );
-  testWidgets('chat stays usable when analysis fails and small viewport fits', (
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: RadioTechTheme.dark,
+        home: AiHubScreen(request: request),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Ponte Bari'), findsOneWidget);
+    expect(
+      find.text('Storico insufficiente per stimare una data.'),
+      findsOneWidget,
+    );
+    expect(find.text('Pianificazione preventiva'), findsOneWidget);
+    expect(find.text('Assistente AI'), findsNothing);
+    expect(find.text('Chiedi all’assistente'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('planning shows an explicit error on a small viewport', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(320, 640);
@@ -91,7 +71,7 @@ void main() {
       if (path == '/ai/insights') {
         throw StateError('analisi temporaneamente assente');
       }
-      return {'enabled': true, 'model': 'local'};
+      fail('Unexpected request: $path');
     }
 
     await tester.pumpWidget(
@@ -102,20 +82,10 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(
-      find.text('Analisi non disponibile. Puoi comunque usare la chat.'),
+      find.text('Pianificazione non disponibile. Verifica la rete e riprova.'),
       findsOneWidget,
     );
-    await tester.tap(find.text('Assistente AI'));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Invia messaggio'));
-    expect(
-      tester
-          .widget<ElevatedButton>(
-            find.widgetWithText(ElevatedButton, 'Invia messaggio'),
-          )
-          .onPressed,
-      isNotNull,
-    );
+    expect(find.text('Assistente AI'), findsNothing);
     expect(tester.takeException(), isNull);
   });
   testWidgets(
@@ -169,15 +139,13 @@ void main() {
     ) async {
       final identities = StreamController<String?>();
       addTearDown(identities.close);
-      final reply = Completer<dynamic>();
       Future<dynamic> request(
         String path, {
         String method = 'GET',
         Map<String, dynamic>? body,
       }) async {
         if (path == '/ai/insights') return insights;
-        if (path == '/ai/status') return {'enabled': true, 'model': 'local'};
-        return reply.future;
+        fail('Unexpected request: $path');
       }
 
       await tester.pumpWidget(
@@ -206,24 +174,9 @@ void main() {
       identities.add('original-account');
       await tester.pumpAndSettle();
       expect(find.byType(AiHubScreen), findsOneWidget);
-      await tester.tap(find.text('Assistente AI'));
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(
-        find.widgetWithText(TextField, 'Chiedi all’assistente'),
-      );
-      await tester.enterText(
-        find.widgetWithText(TextField, 'Chiedi all’assistente'),
-        'Informazioni riservate',
-      );
-      await tester.ensureVisible(find.text('Invia messaggio'));
-      await tester.tap(find.text('Invia messaggio'));
-      await tester.pump();
       identities.add(nextIdentity);
       await tester.pumpAndSettle();
       expect(find.byType(AiHubScreen), findsNothing);
-      reply.complete({'answer': 'Risposta della sessione precedente'});
-      await tester.pumpAndSettle();
-      expect(find.text('Risposta della sessione precedente'), findsNothing);
       expect(find.text('Apri AI'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });

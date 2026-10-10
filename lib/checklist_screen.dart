@@ -2,17 +2,21 @@ import 'package:flutter/material.dart';
 import 'report_closure_screen.dart';
 
 class ChecklistScreen extends StatefulWidget {
+  static const defaultChecklistItems = [
+    'Verifica serraggio traliccio',
+    'Controllo integrità cavi coassiali',
+    'Test valori ROS (TX/RX)',
+    'Controllo infiltrazioni quadro elettrico',
+  ];
+
   final List<String> checklistItems;
   final String antennaId;
+  final String? taskId;
 
   const ChecklistScreen({
-    this.checklistItems = const [
-      "Verifica serraggio traliccio",
-      "Controllo integrità cavi coassiali",
-      "Test valori ROS (TX/RX)",
-      "Controllo infiltrazioni quadro elettrico",
-    ],
+    this.checklistItems = defaultChecklistItems,
     this.antennaId = 'ANT-987',
+    this.taskId,
     super.key,
   });
 
@@ -341,6 +345,7 @@ class _ChecklistScreenState extends State<ChecklistScreen>
                       ReportClosureScreen(
                         checklistResults: _tasks,
                         antennaId: widget.antennaId,
+                        taskId: widget.taskId,
                       ),
                   transitionsBuilder:
                       (context, animation, secondaryAnimation, child) {

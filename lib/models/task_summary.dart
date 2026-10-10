@@ -30,6 +30,35 @@ class TaskSummary {
 
   String get priority => data['priority']?.toString().toUpperCase() ?? 'MEDIUM';
   String? get antennaId => data['antennaId']?.toString();
+  List<String> get checklistItems {
+    final candidates = <dynamic>[
+      data['checklistTemplate'],
+      data['checklist_template'],
+      data['checklist'],
+      if (data['metadata'] is Map)
+        (data['metadata'] as Map)['checklistTemplate'],
+      if (data['metadata'] is Map)
+        (data['metadata'] as Map)['checklist_template'],
+      if (data['metadata'] is Map) (data['metadata'] as Map)['checklist'],
+    ];
+    for (final candidate in candidates) {
+      final items = candidate is List
+          ? candidate
+                .map((item) => item.toString().trim())
+                .where((item) => item.isNotEmpty)
+                .toList()
+          : candidate is String
+          ? candidate
+                .split('\n')
+                .map((item) => item.trim())
+                .where((item) => item.isNotEmpty)
+                .toList()
+          : const <String>[];
+      if (items.isNotEmpty) return items;
+    }
+    return const [];
+  }
+
   DateTime? get dueAt =>
       DateTime.tryParse(data['dueAt']?.toString() ?? '')?.toLocal();
   bool get archived => {'CLOSED', 'CANCELLED', 'APPROVED'}.contains(status);

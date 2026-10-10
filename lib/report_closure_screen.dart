@@ -1535,6 +1535,15 @@ class _ReportClosureScreenState extends State<ReportClosureScreen>
       attachmentBytes['report_${DateTime.now().microsecondsSinceEpoch}.pdf'] =
           pdfBytes;
 
+      if (_hasCentralAlert) {
+        _stage('Invio comunicazione urgente alla centrale…');
+        await ApiService.instance.sendCentralUrgentSignal(
+          description: _centralAlertController.text,
+          assetId: widget.antennaId,
+          taskId: widget.taskId,
+        );
+      }
+
       _stage('Caricamento allegati e invio alla centrale…');
       final submission = widget.submitReport != null
           ? await widget.submitReport!(

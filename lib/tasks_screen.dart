@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'backend_settings_screen.dart';
+import 'checklist_screen.dart';
 import 'package:geolocator/geolocator.dart';
 import 'models/task_summary.dart';
 import 'services/api_service.dart';
 import 'services/app_navigation.dart';
 import 'theme/radiotech_glass.dart';
-import 'report_closure_screen.dart';
 
 class TasksScreen extends StatefulWidget {
   const TasksScreen({
@@ -79,14 +79,10 @@ class _TasksScreenState extends State<TasksScreen> with WidgetsBindingObserver {
         MaterialPageRoute<void>(
           builder: (_) =>
               widget.reportBuilder?.call(task) ??
-              ReportClosureScreen(
-                checklistResults: {
-                  for (final item in (task.data['checklistTemplate'] is List
-                      ? task.data['checklistTemplate'] as List
-                      : const []))
-                    if (item is String && item.trim().isNotEmpty)
-                      item: false,
-                },
+              ChecklistScreen(
+                checklistItems: task.checklistItems.isEmpty
+                    ? ChecklistScreen.defaultChecklistItems
+                    : task.checklistItems,
                 antennaId: task.antennaId ?? 'GENERICO',
                 taskId: task.id,
               ),

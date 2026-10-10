@@ -411,6 +411,45 @@ class ApiService {
     return Map<String, dynamic>.from(_data(response) as Map);
   }
 
+  Future<Map<String, dynamic>> sendCentralUrgentSignal({
+    required String description,
+    String? assetId,
+    String? taskId,
+  }) async {
+    final normalizedDescription = description.trim();
+    if (normalizedDescription.isEmpty) {
+      throw ArgumentError.value(
+        description,
+        'description',
+        'Descrizione della segnalazione obbligatoria.',
+      );
+    }
+    final response = await _client.post(
+      Uri.parse(_apiV1('/workforce/signals')),
+      headers: await _headers,
+      body: jsonEncode({
+        'type': 'SUPPORT_REQUEST',
+        'severity': 'CRITICAL',
+        'description': [
+          if (taskId != null && taskId.trim().isNotEmpty)
+            'Intervento ${taskId.trim()}:',
+          normalizedDescription,
+        ].join(' '),
+        if (assetId != null && assetId.trim().isNotEmpty)
+          'assetId': assetId.trim(),
+        'operationId': _newIdempotencyKey(),
+      }),
+    );
+    _check(response, 'Invio segnalazione urgente alla centrale non riuscito.');
+    final data = _data(response);
+    if (data is! Map) {
+      throw const FormatException(
+        'Risposta della segnalazione urgente non valida.',
+      );
+    }
+    return Map<String, dynamic>.from(data);
+  }
+
   Future<Map<String, dynamic>> transitionIncident(
     String incidentId,
     String status, {

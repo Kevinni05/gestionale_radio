@@ -6,6 +6,20 @@ void main() {
     expect(TaskSummary({'status': 'APPROVED'}).awaitingReview, isFalse);
     expect(TaskSummary({'status': 'REPORT_SUBMITTED'}).awaitingReview, isTrue);
   });
+  test('reads checklist items from task and metadata templates', () {
+    expect(
+      TaskSummary({
+        'checklistTemplate': ['  Verifica cavi  ', ''],
+      }).checklistItems,
+      ['Verifica cavi'],
+    );
+    expect(
+      TaskSummary({
+        'metadata': {'checklist': 'Sicurezza\n\nMisure RF'},
+      }).checklistItems,
+      ['Sicurezza', 'Misure RF'],
+    );
+  });
   test(
     'reviewed and archived tasks do not count as missed field deadlines',
     () {

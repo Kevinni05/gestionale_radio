@@ -194,7 +194,7 @@ class _HomeScreenState extends State<HomeScreen>
 
           SafeArea(
             child: RefreshIndicator(
-              color: AppColors.cyan,
+              color: AppColors.green,
               backgroundColor: AppColors.surface,
               onRefresh: () async {
                 await Future.delayed(const Duration(milliseconds: 500));
@@ -876,8 +876,8 @@ class _HomeScreenState extends State<HomeScreen>
               width: width,
               child: _buildLargeAction(
                 context,
-                title: 'AI e previsioni',
-                subtitle: 'Analisi e assistente',
+                title: 'Pianificazione preventiva',
+                subtitle: 'Scadenze e priorità operative',
                 icon: Icons.auto_awesome,
                 accent: AppColors.blue,
                 onTap: () => Navigator.of(context).push(
@@ -1614,7 +1614,7 @@ class AntennaMapScreen extends StatelessWidget {
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: AppColors.cyan.withValues(alpha: 0.40),
+                            color: AppColors.green.withValues(alpha: 0.40),
                             blurRadius: 14,
                           ),
                         ],

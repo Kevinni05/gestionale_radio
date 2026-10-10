@@ -46,6 +46,7 @@ void main() {
           ),
         ),
       );
+
       await tester.pumpAndSettle();
       for (final label in [
         'Accetta incarico',
@@ -71,6 +72,54 @@ void main() {
       expect(find.text('Ripristino collegamento'), findsOneWidget);
     },
   );
+
+  testWidgets('opens the checklist before the default intervention report', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: RadioTechTheme.dark,
+        home: TasksScreen(
+          loadTasks: () async => [
+            {
+              'id': 'checklist-task',
+              'title': 'Intervento con controlli',
+              'status': 'IN_PROGRESS',
+              'antennaId': 'ANT-1',
+              'metadata': {'checklist': 'Sicurezza\nMisure finali'},
+            },
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final reportButton = find.widgetWithText(
+      ElevatedButton,
+      'Compila rapporto',
+    );
+    await tester.scrollUntilVisible(
+      reportButton,
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(reportButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('CHECKLIST OPERATIVA'), findsOneWidget);
+    expect(find.text('Sicurezza'), findsOneWidget);
+    expect(find.text('Misure finali'), findsOneWidget);
+    expect(find.text('PROCEDI ALLA FIRMA'), findsNothing);
+
+    await tester.tap(find.text('Sicurezza'));
+    await tester.tap(find.text('Misure finali'));
+    await tester.pumpAndSettle();
+    expect(find.text('PROCEDI ALLA FIRMA'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('a notification refreshes an already open assignment list', (
     tester,
