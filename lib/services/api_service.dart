@@ -297,6 +297,27 @@ class ApiService {
     return Map<String, dynamic>.from(_data(response));
   }
 
+  Future<Map<String, dynamic>> getAntennaNotes(String id) async {
+    final response = await _client.get(
+      Uri.parse(_apiV1('/antennas/${Uri.encodeComponent(id)}/notes')),
+      headers: await _headers,
+    ).timeout(const Duration(seconds: 20));
+    _check(response, 'Impossibile caricare le note antenna.');
+    return Map<String, dynamic>.from(_data(response));
+  }
+
+  Future<void> addAntennaNote(String id, String text) async {
+    if (text.trim().isEmpty || text.length > 2000) {
+      throw ArgumentError('La nota deve contenere da 1 a 2000 caratteri.');
+    }
+    final response = await _client.post(
+      Uri.parse(_apiV1('/antennas/${Uri.encodeComponent(id)}/notes')),
+      headers: await _headers,
+      body: jsonEncode({'text': text.trim()}),
+    ).timeout(const Duration(seconds: 20));
+    _check(response, 'Impossibile salvare la nota antenna.');
+  }
+
   Future<Map<String, dynamic>> getAntennaDetails(String id) async {
     final response = await _client
         .get(
