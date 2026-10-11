@@ -61,6 +61,10 @@ class LocalReportAttachmentStore {
     final requestDirectory = Directory(
       '${storageRoot.path}${Platform.pathSeparator}${_safeSegment(requestKey)}',
     );
+    if (await FileSystemEntity.isLink(storageRoot.path) ||
+        await FileSystemEntity.isLink(requestDirectory.path)) {
+      throw StateError('Directory allegati locale non valida.');
+    }
     if (await requestDirectory.exists()) {
       if (!await requestDirectory.list().isEmpty) {
         throw StateError('Esiste già un report in attesa con questa chiave.');
@@ -153,12 +157,19 @@ class LocalReportAttachmentStore {
     final firstPath = attachments.first['path']?.toString();
     if (firstPath == null || firstPath.isEmpty) return;
     final storageRoot = await _storageRoot();
-    final rootPath = storageRoot.absolute.path;
+    final rootPath = await storageRoot.exists()
+        ? await storageRoot.resolveSymbolicLinks()
+        : storageRoot.absolute.path;
     final requestDirectory = File(firstPath).absolute.parent;
-    if (_isStoredPath(requestDirectory.path, rootPath) &&
-        requestDirectory.parent.path == rootPath &&
-        await requestDirectory.exists()) {
-      await requestDirectory.delete(recursive: true);
+    if (await FileSystemEntity.isLink(requestDirectory.path)) return;
+    final directoryPath = await requestDirectory.exists()
+        ? await requestDirectory.resolveSymbolicLinks()
+        : requestDirectory.path;
+    if (_isStoredPath(directoryPath, rootPath) &&
+        Directory(directoryPath).parent.path == rootPath &&
+        await requestDirectory.exists() &&
+        await requestDirectory.list().isEmpty) {
+      await requestDirectory.delete();
     }
   }
 
