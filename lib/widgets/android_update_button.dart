@@ -49,11 +49,12 @@ class _AndroidUpdateButtonState extends State<AndroidUpdateButton> {
         );
       }
     } finally {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _busy = false;
           _downloading = false;
         });
+      }
     }
   }
 
