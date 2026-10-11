@@ -55,10 +55,12 @@ class _OfflineSyncStatusPanelState extends State<OfflineSyncStatusPanel> {
     List<QueuedSyncAction> actions;
     try {
       actions = await _service.pending();
-      final identity = widget.identityProvider?.call() ?? (
-        uid: AuthService.instance.currentUid,
-        tenantId: SessionService.instance.tenantId,
-      );
+      final identity =
+          widget.identityProvider?.call() ??
+          (
+            uid: AuthService.instance.currentUid,
+            tenantId: SessionService.instance.tenantId,
+          );
       final uid = identity.uid;
       final tenantId = identity.tenantId;
       if (uid == null || tenantId == null || tenantId.isEmpty) {
@@ -208,8 +210,14 @@ class _OfflineSyncStatusPanelState extends State<OfflineSyncStatusPanel> {
                 await _refresh();
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Sincronizzazione manuale completata.'),
+                  SnackBar(
+                    content: Text(
+                      _queueCorrupted
+                          ? 'Archivio locale non disponibile. I dati sono conservati.'
+                          : _actions.isEmpty
+                          ? 'Le operazioni di questo account sono state ricevute dal server.'
+                          : '${_actions.length} operazioni ancora in coda. Apri il dettaglio per verificarne lo stato.',
+                    ),
                   ),
                 );
               },
@@ -263,4 +271,3 @@ class _OfflineSyncStatusPanelState extends State<OfflineSyncStatusPanel> {
     _ => 'Operazione offline',
   };
 }
-

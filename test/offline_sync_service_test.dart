@@ -15,6 +15,59 @@ void main() {
   });
 
   test(
+    'stopping replay preserves later items and their retry budget',
+    () async {
+      final service = OfflineSyncService.instance;
+      await service.clear();
+      await service.enqueue('first', {'idempotencyKey': 'first'});
+      await service.enqueue('second', {'idempotencyKey': 'second'});
+      await service.start(
+        executor: (action, _) async {
+          service.stop();
+        },
+        interval: const Duration(days: 1),
+      );
+      final remaining = (await service.pending()).single;
+      expect(remaining.action, 'second');
+      expect(remaining.retryCount, 0);
+      expect(remaining.failed, isFalse);
+    },
+  );
+
+  test(
+    'network recovery during replay schedules one forced follow-up',
+    () async {
+      final service = OfflineSyncService.instance;
+      await service.clear();
+      await service.enqueue('maintenance_report', {
+        'idempotencyKey': 'same-report',
+      });
+      final started = Completer<void>();
+      final release = Completer<void>();
+      var calls = 0;
+      final replay = service.start(
+        executor: (_, payload) async {
+          expect(payload['idempotencyKey'], 'same-report');
+          if (++calls == 1) {
+            started.complete();
+            await release.future;
+            throw Exception('offline');
+          }
+        },
+        interval: const Duration(days: 1),
+      );
+      addTearDown(service.stop);
+      await started.future;
+      await service.retryPending(force: true);
+      await service.retryPending(force: true);
+      release.complete();
+      await replay;
+      expect(calls, 2);
+      expect(await service.pending(), isEmpty);
+    },
+  );
+
+  test(
     'a deferred account does not consume retries or delete its queued work',
     () async {
       final service = OfflineSyncService.instance;
@@ -269,10 +322,7 @@ void main() {
           },
         ],
       };
-      await prefs.setString(
-        'offline_sync_queue',
-        jsonEncode(malformedPrimary),
-      );
+      await prefs.setString('offline_sync_queue', jsonEncode(malformedPrimary));
       await prefs.setString(
         'offline_sync_queue_backup',
         jsonEncode(validBackup),
@@ -295,8 +345,7 @@ void main() {
     });
 
     final prefs = await SharedPreferences.getInstance();
-    final primary =
-        jsonDecode(prefs.getString('offline_sync_queue')!) as Map;
+    final primary = jsonDecode(prefs.getString('offline_sync_queue')!) as Map;
     final backup =
         jsonDecode(prefs.getString('offline_sync_queue_backup')!) as Map;
 

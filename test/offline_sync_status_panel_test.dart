@@ -17,29 +17,40 @@ void main() {
     await OfflineSyncService.instance.clear();
   });
 
-  testWidgets('signed-out and other-tenant identities cannot inspect queued operations', (tester) async {
-    final service = OfflineSyncService.instance;
-    await service.enqueue('maintenance_report', {
-      'actorUid': 'operator-a', 'tenantId': 'tenant-a',
-      'idempotencyKey': 'private-report',
-      'report': {'description': 'Private tenant A report'},
-    });
-    for (final identity in [
-      (uid: null, tenantId: null),
-      (uid: 'operator-a', tenantId: null),
-      (uid: 'operator-a', tenantId: 'tenant-b'),
-      (uid: 'operator-b', tenantId: 'tenant-a'),
-    ]) {
-      await tester.pumpWidget(MaterialApp(home: Scaffold(body: OfflineSyncStatusPanel(
-        key: UniqueKey(), identityProvider: () => identity,
-      ))));
-      await tester.pumpAndSettle();
-      expect(find.text('1 in attesa · 0 da risolvere'), findsNothing);
-      expect(find.textContaining('Private tenant A report'), findsNothing);
-    }
-    expect(await service.pending(), hasLength(1));
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
+  testWidgets(
+    'signed-out and other-tenant identities cannot inspect queued operations',
+    (tester) async {
+      final service = OfflineSyncService.instance;
+      await service.enqueue('maintenance_report', {
+        'actorUid': 'operator-a',
+        'tenantId': 'tenant-a',
+        'idempotencyKey': 'private-report',
+        'report': {'description': 'Private tenant A report'},
+      });
+      for (final identity in [
+        (uid: null, tenantId: null),
+        (uid: 'operator-a', tenantId: null),
+        (uid: 'operator-a', tenantId: 'tenant-b'),
+        (uid: 'operator-b', tenantId: 'tenant-a'),
+      ]) {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: OfflineSyncStatusPanel(
+                key: UniqueKey(),
+                identityProvider: () => identity,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('1 in attesa · 0 da risolvere'), findsNothing);
+        expect(find.textContaining('Private tenant A report'), findsNothing);
+      }
+      expect(await service.pending(), hasLength(1));
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
   testWidgets('failed sync is visible and can be retried manually', (
     tester,
@@ -63,9 +74,13 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: OfflineSyncStatusPanel(
-        identityProvider: () => (uid: 'operator-a', tenantId: 'tenant-a'),
-      ))),
+      MaterialApp(
+        home: Scaffold(
+          body: OfflineSyncStatusPanel(
+            identityProvider: () => (uid: 'operator-a', tenantId: 'tenant-a'),
+          ),
+        ),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -107,9 +122,13 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: OfflineSyncStatusPanel(
-        identityProvider: () => (uid: 'operator-a', tenantId: 'tenant-a'),
-      ))),
+      MaterialApp(
+        home: Scaffold(
+          body: OfflineSyncStatusPanel(
+            identityProvider: () => (uid: 'operator-a', tenantId: 'tenant-a'),
+          ),
+        ),
+      ),
     );
     await tester.pumpAndSettle();
     expect(find.text('1 in attesa · 0 da risolvere'), findsOneWidget);
@@ -125,6 +144,42 @@ void main() {
     expect(await service.pending(), isEmpty);
     await tester.pumpWidget(const SizedBox.shrink());
     service.stop();
+  });
+
+  testWidgets('manual retry does not claim server receipt when work remains', (
+    tester,
+  ) async {
+    final service = OfflineSyncService.instance;
+    await service.enqueue('maintenance_report', {
+      'actorUid': 'operator-a',
+      'tenantId': 'tenant-a',
+      'idempotencyKey': 'still-offline',
+    });
+    await service.start(
+      executor: (_, _) async {
+        throw Exception('offline');
+      },
+      interval: const Duration(days: 1),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: OfflineSyncStatusPanel(
+            identityProvider: () => (uid: 'operator-a', tenantId: 'tenant-a'),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('1 in attesa · 0 da risolvere'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sincronizza ora'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('1 operazioni ancora in coda'), findsOneWidget);
+    expect(find.textContaining('sono state ricevute dal server'), findsNothing);
+    expect(await service.pending(), hasLength(1));
+    service.stop();
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('failed sync can be removed only after confirmation', (
@@ -150,9 +205,13 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: OfflineSyncStatusPanel(
-        identityProvider: () => (uid: 'operator-a', tenantId: 'tenant-a'),
-      ))),
+      MaterialApp(
+        home: Scaffold(
+          body: OfflineSyncStatusPanel(
+            identityProvider: () => (uid: 'operator-a', tenantId: 'tenant-a'),
+          ),
+        ),
+      ),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('0 in attesa · 1 da risolvere'));
@@ -187,9 +246,13 @@ void main() {
       expect(service.queueCorrupted, isTrue);
 
       await tester.pumpWidget(
-        MaterialApp(home: Scaffold(body: OfflineSyncStatusPanel(
-        identityProvider: () => (uid: 'operator-a', tenantId: 'tenant-a'),
-      ))),
+        MaterialApp(
+          home: Scaffold(
+            body: OfflineSyncStatusPanel(
+              identityProvider: () => (uid: 'operator-a', tenantId: 'tenant-a'),
+            ),
+          ),
+        ),
       );
       await tester.pump();
 
@@ -207,4 +270,3 @@ void main() {
     },
   );
 }
-

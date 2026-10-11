@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:flutter/widgets.dart';
+
 import 'local_operational_store.dart';
 
 class SyncDeferredException implements Exception {
@@ -142,6 +144,7 @@ class OfflineSyncService {
   Timer? _timer;
   Future<void> Function(String action, Map<String, dynamic> payload)? _executor;
   bool _retryInProgress = false;
+  bool _retryRequested = false;
   bool _queueCorrupted = false;
   Future<void>? _queueAccess;
 
@@ -172,7 +175,15 @@ class OfflineSyncService {
     _executor = executor;
     _timer?.cancel();
     _timer = Timer.periodic(interval, (_) async {
-      await retryPending();
+      final state = WidgetsBinding.instance.lifecycleState;
+      if (state == null || state == AppLifecycleState.resumed) {
+        try {
+          await retryPending();
+        } catch (_) {
+          // A storage/platform error must preserve the queue and not become an
+          // unhandled timer error. A resume/manual retry can try again.
+        }
+      }
     });
     await retryPending();
   }
@@ -181,6 +192,7 @@ class OfflineSyncService {
     _timer?.cancel();
     _timer = null;
     _executor = null;
+    _retryRequested = false;
   }
 
   Future<void> enqueue(
@@ -306,7 +318,11 @@ class OfflineSyncService {
   }
 
   Future<void> retryPending({bool force = false}) async {
-    if (_executor == null || _retryInProgress) {
+    if (_executor == null) {
+      return;
+    }
+    if (_retryInProgress) {
+      _retryRequested = _retryRequested || force;
       return;
     }
 
@@ -324,6 +340,10 @@ class OfflineSyncService {
 
       final queuedSnapshot = List<QueuedSyncAction>.from(queue);
       for (final item in queuedSnapshot) {
+        // stop() or a replacement executor must not turn a paused replay into
+        // a null call (and charge a retry to the next account's queued work).
+        final executor = _executor;
+        if (executor == null) break;
         if (item.failed ||
             !force &&
                 item.nextAttemptAt != null &&
@@ -331,10 +351,7 @@ class OfflineSyncService {
           continue;
         }
         try {
-          await _executor!(
-            item.action,
-            Map<String, dynamic>.from(item.payload),
-          );
+          await executor(item.action, Map<String, dynamic>.from(item.payload));
           await remove(item.id);
         } on SyncDeferredException {
           // A different account or no account is active. Preserve retry budget.
@@ -362,6 +379,10 @@ class OfflineSyncService {
       }
     } finally {
       _retryInProgress = false;
+      if (_retryRequested) {
+        _retryRequested = false;
+        await retryPending(force: true);
+      }
     }
   }
 
