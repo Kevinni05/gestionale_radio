@@ -30,12 +30,53 @@ class MainActivity : FlutterActivity() {
       val version = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
       result.success(mapOf("applicationId" to packageName, "displayName" to packageManager.getApplicationLabel(applicationInfo).toString(), "versionName" to info.versionName, "versionCode" to version, "signingSha256" to fingerprints))
      }
-     "openDownload" -> {
+     "installVerifiedUpdate" -> {
       val url = call.argument<String>("url") ?: throw IllegalArgumentException()
-      val uri = Uri.parse(url)
-      if (uri.scheme != "https" || uri.host != "github.com" || uri.userInfo != null || uri.query != null || uri.fragment != null || !Regex("^/Kevinni05/gestionale_radio/releases/download/v[0-9A-Za-z.\\-]+/[A-Za-z0-9][0-9A-Za-z._\\-]*-[0-9A-Za-z.\\-]+\\.apk$").matches(uri.path ?: "")) throw IllegalArgumentException()
-      startActivity(Intent(Intent.ACTION_VIEW, uri))
-      result.success(true)
+      val digest = call.argument<String>("sha256") ?: throw IllegalArgumentException()
+      val certificate = call.argument<String>("signingSha256") ?: throw IllegalArgumentException()
+      val code = call.argument<Number>("versionCode")?.toLong() ?: throw IllegalArgumentException()
+      if (!VerifiedApkDownload.busy.compareAndSet(false, true)) throw IllegalStateException()
+      Thread({
+       var file: java.io.File? = null
+       try {
+        val downloaded = VerifiedApkDownload.download(url, digest, java.io.File(cacheDir, "verified_updates"))
+        file = downloaded
+        @Suppress("DEPRECATION")
+        val flags = if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+        @Suppress("DEPRECATION")
+        val archive = packageManager.getPackageArchiveInfo(downloaded.path, flags) ?: throw IllegalArgumentException()
+        @Suppress("DEPRECATION")
+        val installed = packageManager.getPackageInfo(packageName, flags)
+        @Suppress("DEPRECATION")
+        val archiveCode = if (Build.VERSION.SDK_INT >= 28) archive.longVersionCode else archive.versionCode.toLong()
+        @Suppress("DEPRECATION")
+        val installedCode = if (Build.VERSION.SDK_INT >= 28) installed.longVersionCode else installed.versionCode.toLong()
+        @Suppress("DEPRECATION")
+        val archiveSigners = if (Build.VERSION.SDK_INT >= 28) archive.signingInfo?.apkContentsSigners else archive.signatures
+        @Suppress("DEPRECATION")
+        val installedSigners = if (Build.VERSION.SDK_INT >= 28) installed.signingInfo?.apkContentsSigners else installed.signatures
+        fun fingerprints(signers: Array<android.content.pm.Signature>?): Set<String> = signers?.map { signature -> MessageDigest.getInstance("SHA-256").digest(signature.toByteArray()).joinToString("") { "%02x".format(it) } }?.toSet() ?: emptySet()
+        val actualSigners = fingerprints(archiveSigners)
+        require(archive.packageName == packageName && archiveCode == code && code > installedCode)
+        require(actualSigners.isNotEmpty() && actualSigners == fingerprints(installedSigners) && actualSigners.contains(certificate))
+        val verifiedFile = downloaded
+        runOnUiThread {
+         try {
+          check(!isFinishing && !isDestroyed)
+          val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.verified-updates", verifiedFile)
+          startActivity(Intent(Intent.ACTION_VIEW).apply {
+           setDataAndType(uri, "application/vnd.android.package-archive")
+           addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+          })
+          result.success(true)
+         } catch (error: Exception) { verifiedFile.delete(); result.error("UPDATE_UNAVAILABLE", "Impossibile avviare l’installazione verificata", null) }
+         finally { VerifiedApkDownload.busy.set(false) }
+        }
+       } catch (error: Exception) {
+        file?.delete()
+        runOnUiThread { VerifiedApkDownload.busy.set(false); result.error("UPDATE_UNAVAILABLE", "Aggiornamento non verificato. Nessun pacchetto installato.", null) }
+       }
+      }, "radiotech-verified-update").start()
      }
      else -> result.notImplemented()
     }

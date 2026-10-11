@@ -1,0 +1,9 @@
+# Aggiornamenti Android verificati
+
+Il manifest del backend propone applicationId, versione, certificato e SHA-256. L'app verifica la compatibilità con l'identità installata; il download nativo usa HTTPS, massimo cinque redirect verso host GitHub autorizzati, timeout, scadenza complessiva e limite di 150 MiB. I byte sono scritti in una directory privata con un nome temporaneo. Solo dopo la verifica del digest il file è pubblicato come APK verificato.
+
+Prima di aprire l'installatore l'app legge il pacchetto effettivo: applicationId uguale, versionCode uguale al manifest e maggiore dell'installato, insieme di certificati uguale a quello installato e certificato atteso presente. Un errore elimina il download e non apre l'installatore. Il FileProvider espone esclusivamente la directory degli aggiornamenti verificati con un permesso di lettura temporaneo.
+
+Android mantiene la conferma dell'utente e può richiedere l'autorizzazione a installare da questa sorgente. Il ritorno del comando conferma solo l'apertura dell'installatore, non l'avvenuta installazione. La distribuzione tramite Play Store richiede una diversa politica: REQUEST_INSTALL_PACKAGES e il canale APK diretto vanno valutati secondo le regole del canale scelto. Il percorso attuale non supporta la rotazione della chiave di firma. Non disinstallare per aggirare una firma incompatibile con dati locali pendenti.
+
+Test automatici coprono pubblicazione solo dopo digest valido, file troncato, timeout e policy dei redirect; la compilazione verifica integrazione nativa e provider. Restano da eseguire su Android reale: download della release firmata, autorizzazioni installatore, upgrade con coda/bozze/foto pendenti, rifiuto di pacchetto con firma incompatibile e nuova verifica della versione dopo il riavvio. Il canale commerciale e la release pubblicata sono gate distinti dalla distribuzione Firebase ai tester.
