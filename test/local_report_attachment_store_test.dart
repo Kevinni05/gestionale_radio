@@ -74,16 +74,12 @@ void main() {
     },
   );
 
-
   test('rejects oversized staged attachments before copying them', () async {
     final source = File(
       '${supportDirectory.path}${Platform.pathSeparator}too-large.bin',
     );
     await source.writeAsBytes(
-      List<int>.filled(
-        LocalReportAttachmentStore.maxAttachmentBytes + 1,
-        0,
-      ),
+      List<int>.filled(LocalReportAttachmentStore.maxAttachmentBytes + 1, 0),
       flush: true,
     );
     final store = LocalReportAttachmentStore(
@@ -101,24 +97,27 @@ void main() {
     expect(await stagedRoot.exists(), isFalse);
   });
 
-  test('rejects too many staged attachments without touching storage', () async {
-    final store = LocalReportAttachmentStore(
-      supportDirectoryProvider: () async => supportDirectory,
-    );
-    final bytes = <String, Uint8List>{
-      for (
-        var i = 0;
-        i < LocalReportAttachmentStore.maxAttachmentCount + 1;
-        i++
-      )
-        'item-$i.bin': Uint8List.fromList([i % 255]),
-    };
+  test(
+    'rejects too many staged attachments without touching storage',
+    () async {
+      final store = LocalReportAttachmentStore(
+        supportDirectoryProvider: () async => supportDirectory,
+      );
+      final bytes = <String, Uint8List>{
+        for (
+          var i = 0;
+          i < LocalReportAttachmentStore.maxAttachmentCount + 1;
+          i++
+        )
+          'item-$i.bin': Uint8List.fromList([i % 255]),
+      };
 
-    await expectLater(
-      store.stage(requestKey: 'too-many', bytes: bytes),
-      throwsStateError,
-    );
-  });
+      await expectLater(
+        store.stage(requestKey: 'too-many', bytes: bytes),
+        throwsStateError,
+      );
+    },
+  );
 
   test('rejects attachment paths outside the app support store', () async {
     final store = LocalReportAttachmentStore(
@@ -135,4 +134,44 @@ void main() {
     ]);
     expect(await supportDirectory.exists(), isTrue);
   });
+
+  test(
+    'refuses linked staging directories and preserves unrelated files during cleanup',
+    () async {
+      final root = Directory(
+        '${supportDirectory.path}/radiotech_pending_reports',
+      );
+      await root.create();
+      final outside = Directory('${supportDirectory.path}/outside');
+      await outside.create();
+      final linked = Link('${root.path}/linked');
+      await linked.create(outside.path);
+      final store = LocalReportAttachmentStore(
+        supportDirectoryProvider: () async => supportDirectory,
+      );
+      await expectLater(
+        store.stage(
+          requestKey: 'linked',
+          bytes: {
+            'photo.jpg': Uint8List.fromList([1]),
+          },
+        ),
+        throwsStateError,
+      );
+      expect(await outside.list().isEmpty, isTrue);
+      await linked.delete();
+      final staged = await store.stage(
+        requestKey: 'real',
+        bytes: {
+          'photo.jpg': Uint8List.fromList([1]),
+        },
+      );
+      final unrelated = File(
+        '${File(staged.first['path']!).parent.path}/unrelated.jpg',
+      );
+      await unrelated.writeAsBytes([2]);
+      await store.remove(staged);
+      expect(await unrelated.exists(), isTrue);
+    },
+  );
 }

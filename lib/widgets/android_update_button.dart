@@ -10,12 +10,13 @@ class AndroidUpdateButton extends StatefulWidget {
 
 class _AndroidUpdateButtonState extends State<AndroidUpdateButton> {
   bool _busy = false;
+  bool _downloading = false;
   Future<void> _check() async {
     setState(() => _busy = true);
     try {
       final result = await AndroidUpdateService().check();
       if (!mounted) return;
-      await showDialog<void>(
+      final install = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Aggiornamenti RadioTech'),
@@ -27,35 +28,33 @@ class _AndroidUpdateButtonState extends State<AndroidUpdateButton> {
             ),
             if (result.url != null)
               FilledButton(
-                onPressed: () async {
-                  Navigator.pop(context);
-                  try {
-                    await AndroidUpdateService.openDownload(result.url!);
-                  } catch (_) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(this.context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Impossibile aprire il download.'),
-                        ),
-                      );
-                    }
-                  }
-                },
-                child: const Text('Apri download'),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Scarica e verifica'),
               ),
           ],
         ),
       );
+      if (install == true && mounted) {
+        setState(() => _downloading = true);
+        await AndroidUpdateService.installVerifiedUpdate(result);
+      }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Verifica aggiornamenti non disponibile. Riprova.'),
+            content: Text(
+              'Verifica o download non riuscito. Nessun aggiornamento avviato. Riprova.',
+            ),
           ),
         );
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _downloading = false;
+        });
+      }
     }
   }
 
@@ -66,6 +65,12 @@ class _AndroidUpdateButtonState extends State<AndroidUpdateButton> {
       : TextButton.icon(
           onPressed: _busy ? null : _check,
           icon: const Icon(Icons.system_update_outlined),
-          label: Text(_busy ? 'Verifica aggiornamenti…' : 'Aggiornamenti app'),
+          label: Text(
+            _downloading
+                ? 'Download e verifica…'
+                : _busy
+                ? 'Verifica aggiornamenti…'
+                : 'Aggiornamenti app',
+          ),
         );
 }

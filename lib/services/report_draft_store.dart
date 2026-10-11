@@ -1,16 +1,24 @@
 import 'dart:convert';
+import 'dart:async';
 
-import 'package:shared_preferences/shared_preferences.dart';
+import 'local_operational_store.dart';
 
 class ReportDraftStore {
-  static Future<void> _writes = Future<void>.value();
+  static Future<void>? _writes;
 
-  Future<void> _write(Future<void> Function() operation) {
-    final result = _writes.then((_) => operation());
-    // A failed save must reach its caller without poisoning subsequent writes.
-    _writes = result.catchError((Object _) {});
-    return result;
+  Future<void> _write(Future<void> Function() operation) async {
+    final previous = _writes;
+    final released = Completer<void>.sync();
+    _writes = released.future;
+    try {
+      if (previous != null) await previous;
+      await operation();
+    } finally {
+      if (identical(_writes, released.future)) _writes = null;
+      released.complete();
+    }
   }
+
   static String storageKey({
     required String tenantId,
     required String operatorUid,
@@ -22,8 +30,7 @@ class ReportDraftStore {
   }
 
   Future<Map<String, dynamic>?> load(String key) async {
-    final preferences = await SharedPreferences.getInstance();
-    final raw = preferences.getString(key);
+    final raw = await LocalOperationalStore.instance.read(key);
     if (raw == null || raw.isEmpty) return null;
 
     try {
@@ -31,29 +38,25 @@ class ReportDraftStore {
       if (decoded is! Map<String, dynamic>) {
         throw const FormatException('Bozza non valida.');
       }
+      await LocalOperationalStore.instance.adoptValidated({key: raw});
       return Map<String, dynamic>.from(decoded);
     } catch (_) {
-      throw StateError('Bozza non leggibile. Recuperala prima di creare un nuovo invio.');
+      throw StateError(
+        'Bozza non leggibile. Recuperala prima di creare un nuovo invio.',
+      );
     }
   }
 
   Future<void> save(String key, Map<String, dynamic> draft) async {
     final encoded = jsonEncode(draft);
     await _write(() async {
-      final preferences = await SharedPreferences.getInstance();
-      if (!await preferences.setString(key, encoded)) {
-        throw StateError('Salvataggio bozza non riuscito. Invio sospeso.');
-      }
+      await LocalOperationalStore.instance.write(key, encoded);
     });
   }
 
   Future<void> delete(String key) async {
     await _write(() async {
-      final preferences = await SharedPreferences.getInstance();
-      if (!await preferences.remove(key)) {
-        throw StateError('Rimozione bozza non riuscita.');
-      }
+      await LocalOperationalStore.instance.delete(key);
     });
   }
 }
-

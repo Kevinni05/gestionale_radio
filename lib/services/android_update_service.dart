@@ -4,9 +4,17 @@ import 'package:http/http.dart' as http;
 import 'api_service.dart';
 
 class AndroidUpdateCheck {
-  const AndroidUpdateCheck(this.message, {this.url});
+  const AndroidUpdateCheck(
+    this.message, {
+    this.url,
+    this.sha256,
+    this.signingSha256,
+    this.versionCode,
+  });
   final String message;
   final Uri? url;
+  final String? sha256, signingSha256;
+  final int? versionCode;
 }
 
 class AndroidUpdateService {
@@ -63,7 +71,9 @@ class AndroidUpdateService {
     final certificate = latest['signingSha256']?.toString().toLowerCase();
     final digest = latest['sha256']?.toString().toLowerCase();
     if (current['applicationId'] is! String ||
-        !RegExp(r'^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$').hasMatch(current['applicationId']) ||
+        !RegExp(
+          r'^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$',
+        ).hasMatch(current['applicationId']) ||
         latest['applicationId'] != current['applicationId'] ||
         code is! int ||
         code < 1 ||
@@ -91,24 +101,38 @@ class AndroidUpdateService {
       );
     }
     return AndroidUpdateCheck(
-      'È disponibile ${current['displayName'] ?? 'RadioTech'} ${latest['versionName']}. Apri il download per aggiornare l’app.',
+      'È disponibile ${current['displayName'] ?? 'RadioTech'} ${latest['versionName']}. Il download verrà verificato prima di aprire l’installatore Android.',
       url: uri,
+      sha256: digest,
+      signingSha256: certificate,
+      versionCode: code,
     );
   }
 
   static bool isTrustedDownload(Uri uri) =>
       uri.scheme == 'https' &&
       uri.host == 'github.com' &&
+      (uri.port == 443) &&
       uri.userInfo.isEmpty &&
       uri.query.isEmpty &&
       uri.fragment.isEmpty &&
       RegExp(
         r'^/Kevinni05/gestionale_radio/releases/download/v[0-9A-Za-z.\-]+/[A-Za-z0-9][0-9A-Za-z._\-]*-[0-9A-Za-z.\-]+\.apk$',
       ).hasMatch(uri.path);
-  static Future<void> openDownload(Uri uri) async {
-    if (!isTrustedDownload(uri)) {
+  static Future<void> installVerifiedUpdate(AndroidUpdateCheck update) async {
+    final uri = update.url;
+    if (uri == null ||
+        !isTrustedDownload(uri) ||
+        update.sha256 == null ||
+        update.signingSha256 == null ||
+        update.versionCode == null) {
       throw const FormatException('Download non consentito.');
     }
-    await _channel.invokeMethod('openDownload', {'url': uri.toString()});
+    await _channel.invokeMethod('installVerifiedUpdate', {
+      'url': uri.toString(),
+      'sha256': update.sha256,
+      'signingSha256': update.signingSha256,
+      'versionCode': update.versionCode,
+    });
   }
 }

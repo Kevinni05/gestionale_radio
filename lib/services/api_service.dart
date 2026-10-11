@@ -15,6 +15,7 @@ import 'local_report_attachment_store.dart';
 import 'offline_sync_service.dart';
 import 'report_submission_state.dart';
 import 'report_draft_store.dart';
+import 'local_operational_store.dart';
 
 class ApiService {
   ApiService._();
@@ -298,10 +299,12 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> getAntennaNotes(String id) async {
-    final response = await _client.get(
-      Uri.parse(_apiV1('/antennas/${Uri.encodeComponent(id)}/notes')),
-      headers: await _headers,
-    ).timeout(const Duration(seconds: 20));
+    final response = await _client
+        .get(
+          Uri.parse(_apiV1('/antennas/${Uri.encodeComponent(id)}/notes')),
+          headers: await _headers,
+        )
+        .timeout(const Duration(seconds: 20));
     _check(response, 'Impossibile caricare le note antenna.');
     final data = _data(response);
     return data is List
@@ -313,11 +316,13 @@ class ApiService {
     if (text.trim().isEmpty || text.length > 2000) {
       throw ArgumentError('La nota deve contenere da 1 a 2000 caratteri.');
     }
-    final response = await _client.post(
-      Uri.parse(_apiV1('/antennas/${Uri.encodeComponent(id)}/notes')),
-      headers: await _headers,
-      body: jsonEncode({'text': text.trim()}),
-    ).timeout(const Duration(seconds: 20));
+    final response = await _client
+        .post(
+          Uri.parse(_apiV1('/antennas/${Uri.encodeComponent(id)}/notes')),
+          headers: await _headers,
+          body: jsonEncode({'text': text.trim()}),
+        )
+        .timeout(const Duration(seconds: 20));
     _check(response, 'Impossibile salvare la nota antenna.');
   }
 
@@ -673,12 +678,12 @@ class ApiService {
     final tenant = (await user?.getIdTokenResult())?.claims?['tenantId']
         ?.toString();
     if (user == null || tenant == null) return null;
-    final preferences = await SharedPreferences.getInstance();
-    final raw = preferences.getString(
-      'report_receipt_${tenant}_${user.uid}_${taskId ?? antennaId}',
-    );
+    final receiptKey =
+        'report_receipt_${tenant}_${user.uid}_${taskId ?? antennaId}';
+    final raw = await LocalOperationalStore.instance.read(receiptKey);
     if (raw == null) return null;
     final receipt = jsonDecode(raw) as Map;
+    await LocalOperationalStore.instance.adoptValidated({receiptKey: raw});
     return receipt['requestKey'] == requestKey ? receipt['result'] : null;
   }
 
@@ -825,10 +830,9 @@ class ApiService {
           );
           for (var index = 0; index < staged.length; index++) {
             final attachment = staged[index];
-            final file = await _reportAttachmentStore.resolve(attachment);
+            final bytes = await _reportAttachmentStore.readBytes(attachment);
             final name = attachment['name']?.toString() ?? 'attachment';
-            if (await file.length() >
-                LocalReportAttachmentStore.maxAttachmentBytes) {
+            if (bytes.length > LocalReportAttachmentStore.maxAttachmentBytes) {
               throw StateError('Allegato troppo grande: limite 10 MB.');
             }
             final upload = await _client
@@ -844,7 +848,7 @@ class ApiService {
                     'Content-Type': 'application/octet-stream',
                     'Idempotency-Key': '${safeRequestKey}_$index',
                   },
-                  body: await file.readAsBytes(),
+                  body: bytes,
                 )
                 .timeout(ApiHttpClient.timeout);
             _check(upload, 'Caricamento allegato non riuscito.');
@@ -873,9 +877,8 @@ class ApiService {
           return _data(response);
         },
       );
-      final preferences = await SharedPreferences.getInstance();
       final submitted = result is Map ? result['report'] : null;
-      await preferences.setString(
+      await LocalOperationalStore.instance.write(
         'report_receipt_${tenantId}_${actorUid}_${taskId ?? report['antennaId']}',
         jsonEncode({
           'requestKey': requestKey,
@@ -1155,4 +1158,3 @@ class _RetryableApiException implements Exception {
 
   final String message;
 }
-
