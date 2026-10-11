@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter/services.dart';
 
 typedef SupportDirectoryProvider = Future<Directory> Function();
 
@@ -9,6 +10,7 @@ class LocalReportAttachmentStore {
   static const int maxAttachmentBytes = 10000000;
   static const int maxAttachmentCount = 50;
   static const int maxStagedBytes = 100 * 1024 * 1024;
+  static const _channel = MethodChannel('radiotech/operational-store');
 
   LocalReportAttachmentStore({
     SupportDirectoryProvider? supportDirectoryProvider,
@@ -95,8 +97,12 @@ class LocalReportAttachmentStore {
   Future<File> resolve(Map<String, dynamic> attachment) async {
     final file = File(attachment['path']?.toString() ?? '');
     final root = await _storageRoot();
-    final rootPath = root.absolute.path;
-    final filePath = file.absolute.path;
+    final rootPath = await root.exists()
+        ? await root.resolveSymbolicLinks()
+        : root.absolute.path;
+    final filePath = await file.exists()
+        ? await file.resolveSymbolicLinks()
+        : file.absolute.path;
     if (!_isStoredPath(filePath, rootPath)) {
       throw StateError('Percorso allegato locale non valido.');
     }
@@ -105,10 +111,33 @@ class LocalReportAttachmentStore {
         'Allegato locale non disponibile: ${attachment['name']}.',
       );
     }
-    if (await file.length() > maxAttachmentBytes) {
+    if (await file.length() >
+        maxAttachmentBytes + (Platform.isAndroid ? 36 : 0)) {
       throw StateError('Allegato locale oltre il limite di 10 MB.');
     }
-    return file;
+    return File(filePath);
+  }
+
+  Future<Uint8List> readBytes(Map<String, dynamic> attachment) async {
+    final file = await resolve(attachment);
+    if (!Platform.isAndroid) return file.readAsBytes();
+    final bytes = await _channel.invokeMethod<Uint8List>('readAttachment', {
+      'path': file.path,
+    });
+    if (bytes == null || bytes.isEmpty || bytes.length > maxAttachmentBytes) {
+      throw StateError('Allegato locale non leggibile.');
+    }
+    return bytes;
+  }
+
+  Future<void> _protect(File file) async {
+    if (Platform.isAndroid &&
+        await _channel.invokeMethod<bool>('protectAttachment', {
+              'path': file.path,
+            }) !=
+            true) {
+      throw StateError('Protezione allegato non riuscita. Invio sospeso.');
+    }
   }
 
   Future<void> remove(List<Map<String, dynamic>> attachments) async {
@@ -145,6 +174,7 @@ class LocalReportAttachmentStore {
     }
     final target = File(_targetPath(destination, index, name));
     await source.copy(target.path);
+    await _protect(target);
     return {'name': _safeSegment(name), 'path': target.path};
   }
 
@@ -156,6 +186,7 @@ class LocalReportAttachmentStore {
   ) async {
     final target = File(_targetPath(destination, index, name));
     await target.writeAsBytes(bytes, flush: true);
+    await _protect(target);
     return {'name': _safeSegment(name), 'path': target.path};
   }
 
@@ -174,6 +205,6 @@ class LocalReportAttachmentStore {
 
   String _safeSegment(String value) {
     final safe = value.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
-    return safe.isEmpty ? 'attachment' : safe;
+    return safe.isEmpty || safe == '.' || safe == '..' ? 'attachment' : safe;
   }
 }

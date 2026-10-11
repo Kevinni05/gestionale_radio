@@ -830,10 +830,9 @@ class ApiService {
           );
           for (var index = 0; index < staged.length; index++) {
             final attachment = staged[index];
-            final file = await _reportAttachmentStore.resolve(attachment);
+            final bytes = await _reportAttachmentStore.readBytes(attachment);
             final name = attachment['name']?.toString() ?? 'attachment';
-            if (await file.length() >
-                LocalReportAttachmentStore.maxAttachmentBytes) {
+            if (bytes.length > LocalReportAttachmentStore.maxAttachmentBytes) {
               throw StateError('Allegato troppo grande: limite 10 MB.');
             }
             final upload = await _client
@@ -849,7 +848,7 @@ class ApiService {
                     'Content-Type': 'application/octet-stream',
                     'Idempotency-Key': '${safeRequestKey}_$index',
                   },
-                  body: await file.readAsBytes(),
+                  body: bytes,
                 )
                 .timeout(ApiHttpClient.timeout);
             _check(upload, 'Caricamento allegato non riuscito.');

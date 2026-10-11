@@ -18,6 +18,8 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+import java.io.File
+import java.io.FileOutputStream
 
 /** SQLite transactions hold only hashed keys and AES-GCM ciphertext. */
 class OperationalStore(context: Context, messenger: BinaryMessenger) {
@@ -66,6 +68,8 @@ class OperationalStore(context: Context, messenger: BinaryMessenger) {
                             val values = call.argument<Map<String, String?>>("values") ?: throw IllegalArgumentException()
                             write(values); true
                         }
+                        "protectAttachment" -> { protectAttachment(attachment(call.argument<String>("path"))); true }
+                        "readAttachment" -> readAttachment(attachment(call.argument<String>("path")))
                         else -> throw IllegalArgumentException()
                     }
                     main.post { result.success(response) }
@@ -116,5 +120,45 @@ class OperationalStore(context: Context, messenger: BinaryMessenger) {
             }
             database.setTransactionSuccessful()
         } finally { database.endTransaction() }
+    }
+
+    private val attachmentMagic = "RTENC001".toByteArray(StandardCharsets.US_ASCII)
+    private fun attachment(path: String?): File {
+        val root = File(app.filesDir, "radiotech_pending_reports").canonicalFile
+        val file = File(path ?: throw IllegalArgumentException()).canonicalFile
+        if (!file.path.startsWith(root.path + File.separator) || !file.isFile || file.length() > 10000036L) throw IllegalArgumentException()
+        return file
+    }
+    private fun readAttachment(file: File): ByteArray {
+        val bytes = file.readBytes()
+        if (bytes.size < 8 || !bytes.copyOfRange(0, 8).contentEquals(attachmentMagic)) {
+            // Upgrade old staged files before handing their bytes to the sender.
+            if (bytes.isEmpty() || bytes.size > 10000000) throw IllegalArgumentException()
+            protectAttachment(file)
+            return bytes
+        }
+        if (bytes.size < 37) throw IllegalStateException()
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, bytes.copyOfRange(8, 20)))
+        cipher.updateAAD((file.parentFile!!.name + "/" + file.name).toByteArray(StandardCharsets.UTF_8))
+        return cipher.doFinal(bytes.copyOfRange(20, bytes.size))
+    }
+    private fun protectAttachment(file: File) {
+        val bytes = file.readBytes()
+        if (bytes.size >= 8 && bytes.copyOfRange(0, 8).contentEquals(attachmentMagic)) {
+            // Existing encryption must be authenticated before accepting a retry.
+            readAttachment(file); return
+        }
+        if (bytes.isEmpty() || bytes.size > 10000000) throw IllegalArgumentException()
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, key)
+        cipher.updateAAD((file.parentFile!!.name + "/" + file.name).toByteArray(StandardCharsets.UTF_8))
+        val temporary = File.createTempFile("protected-", ".partial", file.parentFile)
+        try {
+            FileOutputStream(temporary).use { output ->
+                output.write(attachmentMagic); output.write(cipher.iv); output.write(cipher.doFinal(bytes)); output.fd.sync()
+            }
+            if (!temporary.renameTo(file)) throw IllegalStateException()
+        } finally { temporary.delete() }
     }
 }
