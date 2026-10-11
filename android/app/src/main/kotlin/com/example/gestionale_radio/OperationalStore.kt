@@ -129,11 +129,12 @@ class OperationalStore(context: Context, messenger: BinaryMessenger? = null, pri
         val id = recordKey(value)
         helper.readableDatabase.query("records", arrayOf("iv", "payload", "deleted"), "record_key=?", arrayOf(id), null, null, null).use { cursor ->
             if (!cursor.moveToFirst()) return mapOf("found" to false, "value" to null)
-            if (cursor.getInt(2) == 1) return mapOf("found" to true, "value" to null)
+            val deleted = cursor.getInt(2)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, cursor.getBlob(0)))
-            cipher.updateAAD(id.toByteArray(StandardCharsets.UTF_8))
-            return mapOf("found" to true, "value" to String(cipher.doFinal(cursor.getBlob(1)), StandardCharsets.UTF_8))
+            cipher.updateAAD((id + "|" + deleted).toByteArray(StandardCharsets.UTF_8))
+            val decoded = cipher.doFinal(cursor.getBlob(1))
+            return mapOf("found" to true, "value" to if (deleted == 1) null else String(decoded, StandardCharsets.UTF_8))
         }
     }
 
@@ -148,13 +149,12 @@ class OperationalStore(context: Context, messenger: BinaryMessenger? = null, pri
                 read(name) // An unreadable old record must not be overwritten or silently deleted.
                 val id = recordKey(name)
                 val row = ContentValues().apply { put("record_key", id); put("deleted", if (value == null) 1 else 0) }
-                if (value == null) { row.put("iv", byteArrayOf()); row.put("payload", byteArrayOf()) }
-                else {
-                    val bytes = value.toByteArray(StandardCharsets.UTF_8)
+                run {
+                    val bytes = (value ?: "").toByteArray(StandardCharsets.UTF_8)
                     if (bytes.size > 8 * 1024 * 1024) throw IllegalArgumentException()
                     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
                     cipher.init(Cipher.ENCRYPT_MODE, key)
-                    cipher.updateAAD(id.toByteArray(StandardCharsets.UTF_8))
+                    cipher.updateAAD((id + "|" + if (value == null) 1 else 0).toByteArray(StandardCharsets.UTF_8))
                     row.put("payload", cipher.doFinal(bytes)); row.put("iv", cipher.iv)
                 }
                 if (database.insertWithOnConflict("records", null, row, SQLiteDatabase.CONFLICT_REPLACE) == -1L) throw IllegalStateException()
@@ -171,6 +171,8 @@ class OperationalStore(context: Context, messenger: BinaryMessenger? = null, pri
         return file
     }
     internal fun readAttachment(file: File): ByteArray {
+        key
+        helper.readableDatabase // Persist and verify key continuity before touching staged photos.
         val bytes = file.readBytes()
         if (bytes.size < 8 || !bytes.copyOfRange(0, 8).contentEquals(attachmentMagic)) {
             // Upgrade old staged files before handing their bytes to the sender.
@@ -185,6 +187,8 @@ class OperationalStore(context: Context, messenger: BinaryMessenger? = null, pri
         return cipher.doFinal(bytes.copyOfRange(20, bytes.size))
     }
     internal fun protectAttachment(file: File) {
+        key
+        helper.writableDatabase
         val bytes = file.readBytes()
         if (bytes.size >= 8 && bytes.copyOfRange(0, 8).contentEquals(attachmentMagic)) {
             // Existing encryption must be authenticated before accepting a retry.

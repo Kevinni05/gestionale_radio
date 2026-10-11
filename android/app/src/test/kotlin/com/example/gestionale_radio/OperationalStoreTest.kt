@@ -48,6 +48,7 @@ class OperationalStoreTest {
 
     @Test fun stagedAttachmentsRejectTamperingAndOperationSubstitution() {
         val context = RuntimeEnvironment.getApplication()
+        context.deleteDatabase("radiotech-operational-v1.db")
         val store = OperationalStore(context, testKey = key())
         val root = File(context.filesDir, "radiotech_pending_reports").apply { mkdirs() }
         val a = File(root, "operation-a").apply { mkdirs() }
@@ -61,6 +62,26 @@ class OperationalStoreTest {
         file.writeBytes(file.readBytes().apply { this[lastIndex] = (this[lastIndex].toInt() xor 1).toByte() })
         assertThrows(Exception::class.java) { store.readAttachment(file) }
         store.close().get()
+        val replacement = OperationalStore(context, testKey = key())
+        assertThrows(Exception::class.java) { replacement.protectAttachment(File(a, "new.jpg").apply { writeBytes(byteArrayOf(5)) }) }
+        replacement.close().get()
         root.deleteRecursively()
+        context.deleteDatabase("radiotech-operational-v1.db")
+    }
+
+    @Test fun changingTheDeletionFlagCannotHideAnAuthenticatedRecord() {
+        val context = RuntimeEnvironment.getApplication()
+        context.deleteDatabase("radiotech-operational-v1.db")
+        val secret = key()
+        var store = OperationalStore(context, testKey = secret)
+        store.write(mapOf("offline_sync_queue" to "pending operation"))
+        store.close().get()
+        context.openOrCreateDatabase("radiotech-operational-v1.db", 0, null).use { db ->
+            db.execSQL("UPDATE records SET deleted=1 WHERE deleted=0 AND length(payload) != ?", arrayOf("radiotech-local-key-v1".toByteArray().size + 16))
+        }
+        store = OperationalStore(context, testKey = secret)
+        assertThrows(Exception::class.java) { store.read("offline_sync_queue") }
+        store.close().get()
+        context.deleteDatabase("radiotech-operational-v1.db")
     }
 }
