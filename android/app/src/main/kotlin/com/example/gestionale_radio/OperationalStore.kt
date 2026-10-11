@@ -72,7 +72,7 @@ class OperationalStore(context: Context, messenger: BinaryMessenger? = null, pri
         override fun onConfigure(db: SQLiteDatabase) {
             super.onConfigure(db)
             db.execSQL("PRAGMA synchronous=FULL")
-            db.execSQL("PRAGMA secure_delete=ON")
+            db.rawQuery("PRAGMA secure_delete=ON", null).use { it.moveToFirst() }
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
             throw IllegalStateException("UNSUPPORTED_SCHEMA")
