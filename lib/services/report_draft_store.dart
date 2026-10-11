@@ -1,15 +1,22 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'local_operational_store.dart';
 
 class ReportDraftStore {
-  static Future<void> _writes = Future<void>.value();
+  static Future<void>? _writes;
 
-  Future<void> _write(Future<void> Function() operation) {
-    final result = _writes.then((_) => operation());
-    // A failed save must reach its caller without poisoning subsequent writes.
-    _writes = result.catchError((Object _) {});
-    return result;
+  Future<void> _write(Future<void> Function() operation) async {
+    final previous = _writes;
+    final released = Completer<void>.sync();
+    _writes = released.future;
+    try {
+      if (previous != null) await previous;
+      await operation();
+    } finally {
+      if (identical(_writes, released.future)) _writes = null;
+      released.complete();
+    }
   }
 
   static String storageKey({

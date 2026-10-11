@@ -22,14 +22,15 @@ import java.io.File
 import java.io.FileOutputStream
 
 /** SQLite transactions hold only hashed keys and AES-GCM ciphertext. */
-class OperationalStore(context: Context, messenger: BinaryMessenger) {
+class OperationalStore(context: Context, messenger: BinaryMessenger? = null, private val testKey: SecretKey? = null) {
     private val app = context.applicationContext
     private val executor = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
-    private val channel = MethodChannel(messenger, "radiotech/operational-store")
+    private val channel = messenger?.let { MethodChannel(it, "radiotech/operational-store") }
     private val alias = "radiotech.operational.v1"
     private val databaseName = "radiotech-operational-v1.db"
     private val key: SecretKey by lazy {
+        testKey ?: run {
         val keystore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         val existing = keystore.getKey(alias, null)
         if (existing is SecretKey) existing else {
@@ -42,10 +43,31 @@ class OperationalStore(context: Context, messenger: BinaryMessenger) {
                     .setKeySize(256).build())
             }.generateKey()
         }
+        }
     }
     private val helper = object : SQLiteOpenHelper(app, databaseName, null, 1) {
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE records (record_key TEXT PRIMARY KEY, iv BLOB NOT NULL, payload BLOB NOT NULL, deleted INTEGER NOT NULL DEFAULT 0)")
+            val id = recordKey("__key_check")
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.ENCRYPT_MODE, key)
+            cipher.updateAAD(id.toByteArray(StandardCharsets.UTF_8))
+            val proof = ContentValues().apply {
+                put("record_key", id); put("payload", cipher.doFinal("radiotech-local-key-v1".toByteArray(StandardCharsets.UTF_8)))
+                put("iv", cipher.iv); put("deleted", 0)
+            }
+            db.insertOrThrow("records", null, proof)
+        }
+        override fun onOpen(db: SQLiteDatabase) {
+            super.onOpen(db)
+            val id = recordKey("__key_check")
+            db.query("records", arrayOf("iv", "payload"), "record_key=?", arrayOf(id), null, null, null).use { cursor ->
+                if (!cursor.moveToFirst()) throw IllegalStateException("KEY_PROOF_UNAVAILABLE")
+                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, cursor.getBlob(0)))
+                cipher.updateAAD(id.toByteArray(StandardCharsets.UTF_8))
+                if (String(cipher.doFinal(cursor.getBlob(1)), StandardCharsets.UTF_8) != "radiotech-local-key-v1") throw IllegalStateException("KEY_PROOF_INVALID")
+            }
         }
         override fun onConfigure(db: SQLiteDatabase) {
             super.onConfigure(db)
@@ -58,12 +80,15 @@ class OperationalStore(context: Context, messenger: BinaryMessenger) {
     }
 
     init {
-        channel.setMethodCallHandler { call, result ->
+        channel?.setMethodCallHandler { call, result ->
             executor.execute {
                 try {
                     key // Establish/validate the key before creating any database.
                     val response: Any = when (call.method) {
-                        "read" -> read(call.argument<String>("key") ?: throw IllegalArgumentException())
+                        "read" -> {
+                            val name = call.argument<String>("key") ?: throw IllegalArgumentException()
+                            validateOperationalKey(name); read(name)
+                        }
                         "write" -> {
                             val values = call.argument<Map<String, String?>>("values") ?: throw IllegalArgumentException()
                             write(values); true
@@ -87,7 +112,20 @@ class OperationalStore(context: Context, messenger: BinaryMessenger) {
             .joinToString("") { "%02x".format(it) }
     }
 
-    private fun read(value: String): Map<String, Any?> {
+    private fun validateOperationalKey(value: String) {
+        if (!(value.startsWith("report_draft_") || value.startsWith("report_receipt_") ||
+                value.startsWith("offline_idempotency_") || value == "offline_sync_queue" || value == "offline_sync_queue_backup")) throw IllegalArgumentException()
+    }
+
+    fun close(): java.util.concurrent.Future<*> {
+        channel?.setMethodCallHandler(null)
+        val closed = executor.submit { helper.close() }
+        executor.shutdown()
+        return closed
+    }
+
+    internal fun read(value: String): Map<String, Any?> {
+        key
         val id = recordKey(value)
         helper.readableDatabase.query("records", arrayOf("iv", "payload", "deleted"), "record_key=?", arrayOf(id), null, null, null).use { cursor ->
             if (!cursor.moveToFirst()) return mapOf("found" to false, "value" to null)
@@ -99,12 +137,15 @@ class OperationalStore(context: Context, messenger: BinaryMessenger) {
         }
     }
 
-    private fun write(values: Map<String, String?>) {
+    internal fun write(values: Map<String, String?>) {
+        key
         if (values.size > 256) throw IllegalArgumentException()
         val database = helper.writableDatabase
         database.beginTransaction()
         try {
             for ((name, value) in values) {
+                validateOperationalKey(name)
+                read(name) // An unreadable old record must not be overwritten or silently deleted.
                 val id = recordKey(name)
                 val row = ContentValues().apply { put("record_key", id); put("deleted", if (value == null) 1 else 0) }
                 if (value == null) { row.put("iv", byteArrayOf()); row.put("payload", byteArrayOf()) }
@@ -129,7 +170,7 @@ class OperationalStore(context: Context, messenger: BinaryMessenger) {
         if (!file.path.startsWith(root.path + File.separator) || !file.isFile || file.length() > 10000036L) throw IllegalArgumentException()
         return file
     }
-    private fun readAttachment(file: File): ByteArray {
+    internal fun readAttachment(file: File): ByteArray {
         val bytes = file.readBytes()
         if (bytes.size < 8 || !bytes.copyOfRange(0, 8).contentEquals(attachmentMagic)) {
             // Upgrade old staged files before handing their bytes to the sender.
@@ -143,7 +184,7 @@ class OperationalStore(context: Context, messenger: BinaryMessenger) {
         cipher.updateAAD((file.parentFile!!.name + "/" + file.name).toByteArray(StandardCharsets.UTF_8))
         return cipher.doFinal(bytes.copyOfRange(20, bytes.size))
     }
-    private fun protectAttachment(file: File) {
+    internal fun protectAttachment(file: File) {
         val bytes = file.readBytes()
         if (bytes.size >= 8 && bytes.copyOfRange(0, 8).contentEquals(attachmentMagic)) {
             // Existing encryption must be authenticated before accepting a retry.

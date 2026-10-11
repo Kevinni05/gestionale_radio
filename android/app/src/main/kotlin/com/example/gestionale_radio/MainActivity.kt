@@ -11,11 +11,12 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+ private var operationalStore: OperationalStore? = null
  private var pending: MethodChannel.Result? = null
  private var pdfBytes: ByteArray? = null
  override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
   super.configureFlutterEngine(flutterEngine)
-  OperationalStore(applicationContext, flutterEngine.dartExecutor.binaryMessenger)
+  operationalStore = OperationalStore(applicationContext, flutterEngine.dartExecutor.binaryMessenger)
   MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "radiotech/updates").setMethodCallHandler { call, result ->
    try {
     when (call.method) {
@@ -54,6 +55,11 @@ class MainActivity : FlutterActivity() {
     startActivityForResult(intent, 7412)
    } catch (error: Exception) { pending = null; pdfBytes = null; result.error("SAVE_FAILED", "Impossibile aprire il salvataggio", null) }
   }
+ }
+ override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+  operationalStore?.close()
+  operationalStore = null
+  super.cleanUpFlutterEngine(flutterEngine)
  }
  @Deprecated("Android result callback used by FlutterActivity")
  override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

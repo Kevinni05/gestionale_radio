@@ -15,6 +15,7 @@ concurrency:
 jobs:
   quality:
     name: Flutter analyze and tests
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -45,10 +46,11 @@ jobs:
         run: flutter analyze
 
       - name: Run Flutter tests
-        run: flutter test --reporter expanded
+        run: flutter test --reporter expanded --timeout 2m
 
   android-qa:
     name: Android QA compile
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -73,6 +75,10 @@ jobs:
 
       - name: Compile Android QA application
         run: flutter build apk --debug --no-pub --target-platform android-arm64 --dart-define-from-file=config/render.json
+
+      - name: Native transactional storage and cryptography tests
+        # Native cryptography/SQLite tests are separate from the Dart boundary mocks.
+        run: bash android/gradlew -p android :app:testDebugUnitTest --no-daemon
 
       - name: Store QA artifact
         uses: actions/upload-artifact@v4
@@ -221,3 +227,4 @@ jobs:
           name: radiotech-android-distribution
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 14
+
