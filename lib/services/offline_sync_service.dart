@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:shared_preferences/shared_preferences.dart';
+import 'local_operational_store.dart';
 
 class SyncDeferredException implements Exception {
   const SyncDeferredException();
@@ -129,6 +129,7 @@ class OfflineSyncService {
   OfflineSyncService._();
 
   static final OfflineSyncService instance = OfflineSyncService._();
+  final LocalOperationalStore _store = LocalOperationalStore.instance;
 
   static const String _queueKey = 'offline_sync_queue';
   static const String _queueBackupKey = 'offline_sync_queue_backup';
@@ -182,56 +183,58 @@ class OfflineSyncService {
     _executor = null;
   }
 
-  Future<void> enqueue(String action, Map<String, dynamic> payload) =>
-      _serialize(() async {
-        final normalizedAction = action.trim();
-        if (normalizedAction.isEmpty) {
-          throw ArgumentError.value(
-            action,
-            'action',
-            'Azione offline obbligatoria.',
-          );
-        }
-        try {
-          jsonEncode(payload);
-        } on JsonUnsupportedObjectError {
-          throw ArgumentError.value(
-            payload,
-            'payload',
-            'Il payload offline deve essere serializzabile.',
-          );
-        }
+  Future<void> enqueue(
+    String action,
+    Map<String, dynamic> payload,
+  ) => _serialize(() async {
+    final normalizedAction = action.trim();
+    if (normalizedAction.isEmpty) {
+      throw ArgumentError.value(
+        action,
+        'action',
+        'Azione offline obbligatoria.',
+      );
+    }
+    try {
+      jsonEncode(payload);
+    } on JsonUnsupportedObjectError {
+      throw ArgumentError.value(
+        payload,
+        'payload',
+        'Il payload offline deve essere serializzabile.',
+      );
+    }
 
-        final current = await _loadQueue();
-        final idempotencyKey = payload['idempotencyKey']?.toString();
-        if (idempotencyKey != null && idempotencyKey.isNotEmpty) {
-          final alreadyQueued = current.any(
-            (entry) =>
-                entry.action == normalizedAction &&
-                entry.payload['actorUid'] == payload['actorUid'] &&
-                entry.payload['tenantId'] == payload['tenantId'] &&
-                entry.payload['idempotencyKey']?.toString() == idempotencyKey,
-          );
-          if (alreadyQueued) return;
-        }
-        if (current.length >= maxQueueItems) {
-          throw StateError(
-            'Coda offline piena: risolvi o rimuovi alcune operazioni prima di continuare.',
-          );
-        }
+    final current = await _loadQueue();
+    final idempotencyKey = payload['idempotencyKey']?.toString();
+    if (idempotencyKey != null && idempotencyKey.isNotEmpty) {
+      final alreadyQueued = current.any(
+        (entry) =>
+            entry.action == normalizedAction &&
+            entry.payload['actorUid'] == payload['actorUid'] &&
+            entry.payload['tenantId'] == payload['tenantId'] &&
+            entry.payload['idempotencyKey']?.toString() == idempotencyKey,
+      );
+      if (alreadyQueued) return;
+    }
+    if (current.length >= maxQueueItems) {
+      throw StateError(
+        'Coda offline piena: risolvi o rimuovi alcune operazioni prima di continuare.',
+      );
+    }
 
-        current.add(
-          QueuedSyncAction(
-            id: '${DateTime.now().microsecondsSinceEpoch}_$normalizedAction',
-            action: normalizedAction,
-            payload: Map<String, dynamic>.from(payload),
-            createdAt: DateTime.now().toUtc(),
-          ),
-        );
-        await _persistQueue(current);
-      });
+    current.add(
+      QueuedSyncAction(
+        id: '${DateTime.now().microsecondsSinceEpoch}_$normalizedAction',
+        action: normalizedAction,
+        payload: Map<String, dynamic>.from(payload),
+        createdAt: DateTime.now().toUtc(),
+      ),
+    );
+    await _persistQueue(current);
+  });
 
-  Future<String> persistentIdempotencyKey(String scope) async {
+  Future<String> persistentIdempotencyKey(String scope) => _serialize(() async {
     if (scope.isEmpty) {
       throw ArgumentError.value(
         scope,
@@ -239,23 +242,24 @@ class OfflineSyncService {
         'Lo scope della chiave è obbligatorio.',
       );
     }
-    final preferences = await SharedPreferences.getInstance();
     final preferenceKey = 'offline_idempotency_$scope';
-    final existing = preferences.getString(preferenceKey);
-    if (existing != null && existing.isNotEmpty) return existing;
+    final existing = await _store.read(preferenceKey);
+    if (existing != null && existing.isNotEmpty) {
+      await _store.adoptValidated({preferenceKey: existing});
+      return existing;
+    }
 
     final random = math.Random.secure();
     final entropy = List<int>.generate(16, (_) => random.nextInt(256));
     final generated = entropy
         .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
         .join();
-    await preferences.setString(preferenceKey, generated);
+    await _store.write(preferenceKey, generated);
     return generated;
-  }
+  });
 
   Future<void> clearPersistentIdempotencyKey(String scope) async {
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.remove('offline_idempotency_$scope');
+    await _store.delete('offline_idempotency_$scope');
   }
 
   Future<List<QueuedSyncAction>> pending() async {
@@ -274,9 +278,7 @@ class OfflineSyncService {
   });
 
   Future<void> clear() => _serialize(() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_queueKey);
-    await prefs.remove(_queueBackupKey);
+    await _store.writeAll({_queueKey: null, _queueBackupKey: null});
     _queueCorrupted = false;
   });
 
@@ -329,7 +331,10 @@ class OfflineSyncService {
           continue;
         }
         try {
-          await _executor!(item.action, Map<String, dynamic>.from(item.payload));
+          await _executor!(
+            item.action,
+            Map<String, dynamic>.from(item.payload),
+          );
           await remove(item.id);
         } on SyncDeferredException {
           // A different account or no account is active. Preserve retry budget.
@@ -366,9 +371,8 @@ class OfflineSyncService {
   }
 
   Future<List<QueuedSyncAction>> _loadQueue() async {
-    final prefs = await SharedPreferences.getInstance();
-    final primaryRaw = prefs.getString(_queueKey);
-    final backupRaw = prefs.getString(_queueBackupKey);
+    final primaryRaw = await _store.read(_queueKey);
+    final backupRaw = await _store.read(_queueBackupKey);
     final hasPrimary = primaryRaw != null && primaryRaw.trim().isNotEmpty;
     final hasBackup = backupRaw != null && backupRaw.trim().isNotEmpty;
     final primary = hasPrimary ? _decodeSnapshot(primaryRaw) : null;
@@ -395,11 +399,17 @@ class OfflineSyncService {
 
     // Repair only a stale or corrupt slot. A read must never replace a newer
     // recovery copy with an older queue revision.
-    if (primary?.encoded != selected.encoded) {
-      await prefs.setString(_queueKey, selected.encoded);
-    }
-    if (backup?.encoded != selected.encoded) {
-      await prefs.setString(_queueBackupKey, selected.encoded);
+    if (primary?.encoded != selected.encoded ||
+        backup?.encoded != selected.encoded) {
+      await _store.writeAll({
+        _queueBackupKey: selected.encoded,
+        _queueKey: selected.encoded,
+      });
+    } else {
+      await _store.adoptValidated({
+        _queueBackupKey: selected.encoded,
+        _queueKey: selected.encoded,
+      });
     }
     return List<QueuedSyncAction>.from(selected.items);
   }
@@ -440,8 +450,9 @@ class OfflineSyncService {
     try {
       return rawItems
           .map(
-            (entry) =>
-                QueuedSyncAction.fromJson(Map<String, dynamic>.from(entry as Map)),
+            (entry) => QueuedSyncAction.fromJson(
+              Map<String, dynamic>.from(entry as Map),
+            ),
           )
           .toList(growable: true);
     } catch (_) {
@@ -453,9 +464,8 @@ class OfflineSyncService {
     if (queue.length > maxQueueItems) {
       throw StateError('Coda offline oltre il limite consentito.');
     }
-    final prefs = await SharedPreferences.getInstance();
-    final primary = _decodeSnapshot(prefs.getString(_queueKey));
-    final backup = _decodeSnapshot(prefs.getString(_queueBackupKey));
+    final primary = _decodeSnapshot(await _store.read(_queueKey));
+    final backup = _decodeSnapshot(await _store.read(_queueBackupKey));
     final revision =
         math.max(primary?.revision ?? 0, backup?.revision ?? 0) + 1;
     final encoded = jsonEncode({
@@ -464,14 +474,9 @@ class OfflineSyncService {
       'items': queue.map((entry) => entry.toJson()).toList(growable: false),
     });
 
-    // Write the recovery slot first. If the process stops between writes, the
-    // next read selects the newer revision and repairs the stale slot.
-    if (!await prefs.setString(_queueBackupKey, encoded)) {
-      throw StateError('Impossibile salvare il backup della coda offline.');
-    }
-    if (!await prefs.setString(_queueKey, encoded)) {
-      throw StateError('Impossibile salvare la coda offline.');
-    }
+    // Both encrypted copies commit in one SQLite transaction on Android.
+    // Development preferences preserve the existing backup-first behavior.
+    await _store.writeAll({_queueBackupKey: encoded, _queueKey: encoded});
   }
 
   Future<void> _replace(String id, QueuedSyncAction updated) =>

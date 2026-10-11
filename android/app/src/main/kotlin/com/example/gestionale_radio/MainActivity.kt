@@ -15,6 +15,7 @@ class MainActivity : FlutterActivity() {
  private var pdfBytes: ByteArray? = null
  override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
   super.configureFlutterEngine(flutterEngine)
+  OperationalStore(applicationContext, flutterEngine.dartExecutor.binaryMessenger)
   MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "radiotech/updates").setMethodCallHandler { call, result ->
    try {
     when (call.method) {
@@ -66,3 +67,4 @@ class MainActivity : FlutterActivity() {
   catch (error: Exception) { result.error("SAVE_FAILED", "Impossibile salvare il PDF", null) }
  }
 }
+
