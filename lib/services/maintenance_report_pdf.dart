@@ -20,6 +20,7 @@ class MaintenanceReportPdf {
     String? taskId,
     String findings = '',
     Map<String, bool> checklist = const {},
+    String? checklistVersion,
     Map<String, double> measurements = const {},
     List<Map<String, dynamic>> materials = const [],
     List<ReportPhoto> photos = const [],
@@ -163,6 +164,11 @@ class MaintenanceReportPdf {
                     (e) => [e.key, e.value ? 'VERIFICATO' : 'NON VERIFICATO'],
                   )
                   .toList(),
+            ),
+          if (checklistVersion != null)
+            pw.Text(
+              'Versione checklist: $checklistVersion',
+              style: const pw.TextStyle(fontSize: 7),
             ),
           section('Misure tecniche'),
           if (measurements.isEmpty)

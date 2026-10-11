@@ -2,6 +2,10 @@ name: Signed Android production release
 on:
   workflow_dispatch:
     inputs:
+      update_manifest_url:
+        description: Optional HTTPS manifest URL for the owner website
+        type: string
+        default: ''
       publish:
         description: Publish the verified APK as a public GitHub release
         type: boolean
@@ -18,6 +22,7 @@ jobs:
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       ANDROID_EXPECTED_SIGNING_SHA256: ${{ secrets.ANDROID_SIGNING_SHA256 }}
+      UPDATE_MANIFEST_URL: ${{ inputs.update_manifest_url }}
       MOBILE_API_BASE_URL: ${{ vars.MOBILE_API_BASE_URL || 'https://radiotechwebapp.onrender.com' }}
       ANDROID_APPLICATION_ID: ${{ vars.ANDROID_APPLICATION_ID || 'com.example.gestionale_radio' }}
       ANDROID_APP_LABEL: ${{ vars.ANDROID_APP_LABEL || 'RadioTech' }}
@@ -33,6 +38,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Validate private update origin
+        run: |
+          node - <<'NODE'
+          const fs=require('node:fs');let origin='';
+          if(process.env.UPDATE_MANIFEST_URL){const uri=new URL(process.env.UPDATE_MANIFEST_URL);if(uri.protocol!=='https:'||uri.port||uri.username||uri.password||uri.search||uri.hash||!uri.pathname.endsWith('.json'))throw new Error('A canonical HTTPS manifest URL is required');origin=uri.origin;}
+          fs.appendFileSync(process.env.GITHUB_ENV,`APK_UPDATE_ORIGIN=${origin}\n`);
+          NODE
       - name: Prepare private signing identity
         run: |
           node - <<'NODE'
@@ -47,8 +59,8 @@ jobs:
       - run: flutter test --reporter expanded
       - name: Build production APK and AAB
         run: |
-          flutter build apk --release --dart-define=API_BASE_URL="$MOBILE_API_BASE_URL" --dart-define=APP_DISPLAY_NAME="$MOBILE_APP_DISPLAY_NAME" --dart-define=APP_CHECK_DEBUG=false --obfuscate --split-debug-info=release-symbols
-          flutter build appbundle --release --dart-define=API_BASE_URL="$MOBILE_API_BASE_URL" --dart-define=APP_DISPLAY_NAME="$MOBILE_APP_DISPLAY_NAME" --dart-define=APP_CHECK_DEBUG=false --obfuscate --split-debug-info=release-symbols
+          flutter build apk --release --dart-define=API_BASE_URL="$MOBILE_API_BASE_URL" --dart-define=APP_DISPLAY_NAME="$MOBILE_APP_DISPLAY_NAME" --dart-define=APK_UPDATE_ORIGIN="$APK_UPDATE_ORIGIN" --dart-define=UPDATE_MANIFEST_URL="$UPDATE_MANIFEST_URL" --dart-define=APP_CHECK_DEBUG=false --obfuscate --split-debug-info=release-symbols
+          flutter build appbundle --release --dart-define=API_BASE_URL="$MOBILE_API_BASE_URL" --dart-define=APP_DISPLAY_NAME="$MOBILE_APP_DISPLAY_NAME" --dart-define=APK_UPDATE_ORIGIN="$APK_UPDATE_ORIGIN" --dart-define=UPDATE_MANIFEST_URL="$UPDATE_MANIFEST_URL" --dart-define=APP_CHECK_DEBUG=false --obfuscate --split-debug-info=release-symbols
       - name: Verify APK certificate and prepare release metadata
         run: |
           signer=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n1)
@@ -65,8 +77,10 @@ jobs:
           fs.copyFileSync('build/app/outputs/flutter-apk/app-release.apk',`artifacts/${name}.apk`);
           fs.copyFileSync('build/app/outputs/bundle/release/app-release.aab',`artifacts/${name}.aab`);
           const repoUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}`;
-          const manifest = {available:false,channel:'GITHUB_RELEASES',applicationId:process.env.ANDROID_APPLICATION_ID,versionName:match[1],versionCode:Number(match[2]),signingSha256:certificate,sha256:crypto.createHash('sha256').update(fs.readFileSync(`artifacts/${name}.apk`)).digest('hex'),downloadUrl:`${repoUrl}/releases/download/${tag}/${name}.apk`};
+          const manifest = {available:false,channel:process.env.UPDATE_MANIFEST_URL?'PRIVATE_SITE':'GITHUB_RELEASES',applicationId:process.env.ANDROID_APPLICATION_ID,versionName:match[1],versionCode:Number(match[2]),signingSha256:certificate,sha256:crypto.createHash('sha256').update(fs.readFileSync(`artifacts/${name}.apk`)).digest('hex'),downloadUrl:process.env.UPDATE_MANIFEST_URL?new URL(`${name}.apk`,process.env.UPDATE_MANIFEST_URL).href:`${repoUrl}/releases/download/${tag}/${name}.apk`};
           fs.writeFileSync('artifacts/mobile-release.json',JSON.stringify(manifest,null,2));
+          if(process.env.UPDATE_MANIFEST_URL)fs.writeFileSync('artifacts/latest.json',JSON.stringify({...manifest,available:true},null,2));
+          fs.writeFileSync('artifacts/avviso-aggiornamento.txt',`È disponibile ${name}. Apri RadioTech e controlla gli aggiornamenti. Il pacchetto viene verificato prima dell'installazione.`);
           fs.writeFileSync('artifacts/release-notes.md','APK Android firmato di produzione. Report e archivi su Render, stato di connessione e aggiornamenti. Conservare i dati locali prima del passaggio da una build con firma differente.');
           fs.appendFileSync(process.env.GITHUB_ENV,`RELEASE_TAG=${tag}\nRELEASE_NAME=${name}\n`);
           NODE
@@ -84,6 +98,8 @@ jobs:
             artifacts/*.apk
             artifacts/*.aab
             artifacts/mobile-release.json
+            artifacts/latest.json
+            artifacts/avviso-aggiornamento.txt
             certificate-report.txt
           retention-days: 30
       - name: Encrypt symbol files before offsite storage

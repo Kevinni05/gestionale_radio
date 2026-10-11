@@ -20,13 +20,24 @@ val releaseStore = releaseKey("storeFile", "ANDROID_KEYSTORE_PATH")
 
 gradle.taskGraph.whenReady {
     if (allTasks.any { it.name == "assembleRelease" || it.name == "bundleRelease" }) {
+        require(System.getenv("RADIOTECH_QA_BUILD") != "true") { "QA emulator settings are forbidden in release builds." }
         require(!releaseStore.isNullOrBlank() && file(releaseStore!!).isFile) {
             "Production builds require the existing configured keystore; unsigned releases are forbidden."
         }
     }
 }
 
+// Isolated native/device tests use a separate installation and never the
+// production Firebase registration. Runtime Firebase options are explicit.
+if (System.getenv("RADIOTECH_QA_BUILD") == "true") {
+    tasks.matching { it.name.contains("GoogleServices") }.configureEach { enabled = false }
+}
+
+val privateUpdateOrigin = System.getenv("APK_UPDATE_ORIGIN") ?: ""
+require(privateUpdateOrigin.isEmpty() || Regex("^https://[A-Za-z0-9.-]+$").matches(privateUpdateOrigin)) { "APK_UPDATE_ORIGIN requires an HTTPS origin without a path." }
+
 android {
+    buildFeatures { buildConfig = true }
     testOptions {
         unitTests.all {
             it.jvmArgs("--add-opens=java.base/java.lang=ALL-UNNAMED", "--add-opens=java.base/java.util=ALL-UNNAMED",
@@ -47,6 +58,7 @@ android {
         applicationId = System.getenv("ANDROID_APPLICATION_ID") ?: "com.example.gestionale_radio"
         manifestPlaceholders["appLabel"] =
             System.getenv("ANDROID_APP_LABEL") ?: "RadioTech"
+        buildConfigField("String", "PRIVATE_UPDATE_ORIGIN", "\"$privateUpdateOrigin\"")
         minSdk = 24
         targetSdk = 36
         versionCode = flutter.versionCode

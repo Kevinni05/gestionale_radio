@@ -48,10 +48,7 @@ void main() {
       );
 
       await tester.pumpAndSettle();
-      for (final label in [
-        'Accetta incarico',
-        'Check-in GPS',
-      ]) {
+      for (final label in ['Accetta incarico', 'Check-in GPS']) {
         await tester.ensureVisible(find.text(label));
         await tester.tap(find.text(label));
         await tester.pumpAndSettle();

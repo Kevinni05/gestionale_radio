@@ -1,4 +1,8 @@
-# Mobile distribution via Firebase App Distribution
+# Canali Android
+
+Il canale commerciale scelto è [APK firmato sul sito del proprietario](PRIVATE-APK-DELIVERY.md). Firebase App Distribution rimane il canale di collaudo. Il sito HTTPS deve ancora essere creato; non è attestata una pubblicazione commerciale.
+
+# Firebase App Distribution — QA
 
 CI can publish a signed Android APK after successful pushes to `main`.
 

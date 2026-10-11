@@ -33,4 +33,13 @@ class VerifiedApkDownloadTest {
         assertFalse(VerifiedApkDownload.redirectUrl(URI("https://attacker.example/file.apk")))
         assertFalse(VerifiedApkDownload.redirectUrl(URI("https://user@github.com/file.apk")))
     }
+    @Test fun privateSiteDoesNotPermitForeignRedirectsOrCredentialUrls() {
+        val origin = "https://updates.example.com"
+        assertTrue(VerifiedApkDownload.privateSiteUrl(URI("$origin/latest.apk"), origin))
+        assertFalse(VerifiedApkDownload.privateSiteUrl(URI("https://evil.example/latest.apk"), origin))
+        assertFalse(VerifiedApkDownload.privateSiteUrl(URI("http://updates.example.com/latest.apk"), origin))
+        assertFalse(VerifiedApkDownload.privateSiteUrl(URI("https://user@updates.example.com/latest.apk"), origin))
+        assertFalse(VerifiedApkDownload.privateSiteUrl(URI("$origin/latest.apk?token=test"), origin))
+        assertFalse(VerifiedApkDownload.privateSiteUrl(URI("$origin/latest.apk"), ""))
+    }
 }

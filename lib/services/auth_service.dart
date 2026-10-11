@@ -7,6 +7,8 @@ class AuthService {
   AuthService._();
 
   static final AuthService instance = AuthService._();
+  int _sessionRevision = 0;
+  int get sessionRevision => _sessionRevision;
 
   FirebaseAuth? get _auth {
     if (Firebase.apps.isEmpty) {
@@ -32,6 +34,7 @@ class AuthService {
       );
     }
 
+    _sessionRevision++;
     return await auth.signInWithEmailAndPassword(
       email: email.trim(),
       password: password,
@@ -49,6 +52,7 @@ class AuthService {
       );
     }
 
+    _sessionRevision++;
     return await auth.createUserWithEmailAndPassword(
       email: email.trim(),
       password: password,
@@ -67,8 +71,10 @@ class AuthService {
 
   Future<String?> refreshIdToken() async =>
       _auth?.currentUser?.getIdToken(true);
-  Future<UserCredential> signInDeviceToken(String token) =>
-      _auth!.signInWithCustomToken(token);
+  Future<UserCredential> signInDeviceToken(String token) {
+    _sessionRevision++;
+    return _auth!.signInWithCustomToken(token);
+  }
 
   Future<String> requireIdToken() async {
     final token = await getIdToken();
@@ -81,6 +87,7 @@ class AuthService {
   }
 
   Future<void> signOut() async {
+    _sessionRevision++;
     final auth = _auth;
     if (auth == null) {
       return;

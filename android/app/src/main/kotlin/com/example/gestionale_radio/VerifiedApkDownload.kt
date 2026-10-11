@@ -14,13 +14,21 @@ internal object VerifiedApkDownload {
     private val digestPattern = Regex("^[a-f0-9]{64}$")
     private val releasePath = Regex("^/Kevinni05/gestionale_radio/releases/download/v[0-9A-Za-z.\\-]+/[A-Za-z0-9][0-9A-Za-z._\\-]*-[0-9A-Za-z.\\-]+\\.apk$")
 
-    fun initialUrl(uri: URI): Boolean = secureUrl(uri) && uri.host == "github.com" && uri.rawQuery == null && releasePath.matches(uri.path ?: "")
-    fun redirectUrl(uri: URI): Boolean = secureUrl(uri) && uri.host in setOf("github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com")
+    internal fun privateSiteUrl(uri: URI, origin: String = BuildConfig.PRIVATE_UPDATE_ORIGIN): Boolean {
+        val configured = runCatching { URI(origin) }.getOrNull() ?: return false
+        return origin.isNotEmpty() && secureUrl(configured) && configured.host != null &&
+            configured.path.isNullOrEmpty() && configured.rawQuery == null &&
+            secureUrl(uri) && uri.host == configured.host && uri.rawQuery == null &&
+            uri.normalize().path == uri.path
+    }
+    fun initialUrl(uri: URI): Boolean = (privateSiteUrl(uri) && (uri.path ?: "").endsWith(".apk")) || secureUrl(uri) && uri.host == "github.com" && uri.rawQuery == null && releasePath.matches(uri.path ?: "")
+    fun redirectUrl(uri: URI): Boolean = privateSiteUrl(uri) || secureUrl(uri) && uri.host in setOf("github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com")
     private fun secureUrl(uri: URI): Boolean = uri.scheme == "https" && uri.userInfo == null && uri.fragment == null && (uri.port == -1 || uri.port == 443)
 
     fun download(url: String, digest: String, directory: File): File {
         var uri = URI(url)
         require(initialUrl(uri) && digestPattern.matches(digest))
+        val privateDownload = privateSiteUrl(uri)
         directory.mkdirs()
         // Retain only the most recent verified APK; a new click cannot consume unbounded disk.
         directory.listFiles()?.forEach { it.delete() }
@@ -36,7 +44,7 @@ internal object VerifiedApkDownload {
                 if (status in listOf(301, 302, 303, 307, 308)) {
                     require(hop < 5)
                     uri = uri.resolve(connection.getHeaderField("Location") ?: throw IllegalStateException())
-                    require(redirectUrl(uri))
+                    require(if (privateDownload) privateSiteUrl(uri) else redirectUrl(uri))
                 } else {
                     require(status == 200)
                     require(connection.contentLengthLong <= MAX_BYTES)

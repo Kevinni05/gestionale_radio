@@ -35,46 +35,54 @@ void main() {
     },
   );
 
-  test('does not retry a failed second authentication or follow redirects', () async {
-    var calls = 0;
-    final client = ApiHttpClient(
-      refreshToken: () async => 'fresh',
-      retryDelays: const [],
-      inner: MockClient((request) async {
-        calls++;
-        expect(request.followRedirects, isFalse);
-        return http.Response('{}', 401);
-      }),
-    );
-    addTearDown(client.close);
-    expect(
-      (await client.get(
-        Uri.parse('https://api.example.org'),
-        headers: {'Authorization': 'Bearer expired'},
-      )).statusCode,
-      401,
-    );
-    expect(calls, 2);
-  });
+  test(
+    'does not retry a failed second authentication or follow redirects',
+    () async {
+      var calls = 0;
+      final client = ApiHttpClient(
+        refreshToken: () async => 'fresh',
+        retryDelays: const [],
+        inner: MockClient((request) async {
+          calls++;
+          expect(request.followRedirects, isFalse);
+          return http.Response('{}', 401);
+        }),
+      );
+      addTearDown(client.close);
+      expect(
+        (await client.get(
+          Uri.parse('https://api.example.org'),
+          headers: {'Authorization': 'Bearer expired'},
+        )).statusCode,
+        401,
+      );
+      expect(calls, 2);
+    },
+  );
 
-  test('retries transient GET failures and preserves response semantics', () async {
-    var calls = 0;
-    final client = ApiHttpClient(
-      retryDelays: const [Duration.zero, Duration.zero],
-      inner: MockClient((request) async {
-        calls++;
-        if (calls < 3) return http.Response('busy', 503);
-        return http.Response('ok', 200);
-      }),
-    );
-    addTearDown(client.close);
+  test(
+    'retries transient GET failures and preserves response semantics',
+    () async {
+      var calls = 0;
+      final client = ApiHttpClient(
+        retryDelays: const [Duration.zero, Duration.zero],
+        inner: MockClient((request) async {
+          calls++;
+          if (calls < 3) return http.Response('busy', 503);
+          return http.Response('ok', 200);
+        }),
+      );
+      addTearDown(client.close);
 
-    final response = await client.get(Uri.parse('https://api.example.org/health'));
+      final response = await client.get(
+        Uri.parse('https://api.example.org/health'),
+      );
 
-    expect(response.statusCode, 200);
-    expect(response.body, 'ok');
-    expect(calls, 3);
-  });
+      expect(response.statusCode, 200);
+      expect(response.body, 'ok');
+      expect(calls, 3);
+    },
+  );
 
   test('retries keyed POST but never replays an unsafe POST', () async {
     var keyedCalls = 0;
@@ -87,13 +95,11 @@ void main() {
     );
     addTearDown(keyed.close);
     expect(
-      (
-        await keyed.post(
-          Uri.parse('https://api.example.org/report'),
-          headers: {'Idempotency-Key': 'report-1'},
-          body: '{}',
-        )
-      ).statusCode,
+      (await keyed.post(
+        Uri.parse('https://api.example.org/report'),
+        headers: {'Idempotency-Key': 'report-1'},
+        body: '{}',
+      )).statusCode,
       200,
     );
     expect(keyedCalls, 2);
@@ -108,7 +114,9 @@ void main() {
     );
     addTearDown(unsafe.close);
     expect(
-      (await unsafe.post(Uri.parse('https://api.example.org/create'))).statusCode,
+      (await unsafe.post(
+        Uri.parse('https://api.example.org/create'),
+      )).statusCode,
       503,
     );
     expect(unsafeCalls, 1);

@@ -15,10 +15,9 @@ class ApiHttpClient extends http.BaseClient {
     List<Duration>? retryDelays,
   }) : _inner = inner ?? http.Client(),
        _refreshToken = refreshToken ?? AuthService.instance.refreshIdToken,
-       _retryDelays = retryDelays ?? const [
-         Duration(milliseconds: 300),
-         Duration(milliseconds: 900),
-       ];
+       _retryDelays =
+           retryDelays ??
+           const [Duration(milliseconds: 300), Duration(milliseconds: 900)];
 
   final http.Client _inner;
   final Future<String?> Function() _refreshToken;
@@ -48,10 +47,7 @@ class ApiHttpClient extends http.BaseClient {
       return clone;
     }
 
-    var response = await _sendWithRetry(
-      () => copy(),
-      replaySafe: replaySafe,
-    );
+    var response = await _sendWithRetry(() => copy(), replaySafe: replaySafe);
 
     if (response.statusCode == 401 &&
         request.headers.containsKey('Authorization')) {
