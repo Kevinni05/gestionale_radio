@@ -1,3 +1,4 @@
+import 'package:gestionale_radio/services/app_navigation.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -174,9 +175,11 @@ void main() {
       identities.add('original-account');
       await tester.pumpAndSettle();
       expect(find.byType(AiHubScreen), findsOneWidget);
+      AppNavigation.openTask('private-task-original-account');
       identities.add(nextIdentity);
       await tester.pumpAndSettle();
       expect(find.byType(AiHubScreen), findsNothing);
+      expect(AppNavigation.requestedTask.value, isNull);
       expect(find.text('Apri AI'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });

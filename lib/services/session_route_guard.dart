@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'app_navigation.dart';
 
 /// Disposes pushed screens and their private state when the account changes.
 class SessionRouteGuard extends StatefulWidget {
@@ -28,6 +29,7 @@ class _SessionRouteGuardState extends State<SessionRouteGuard> {
     _subscription = widget.identities.listen((identity) {
       if (identity == _identity) return;
       _identity = identity;
+      AppNavigation.requestedTask.value = null;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
       });

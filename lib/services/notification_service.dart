@@ -14,6 +14,8 @@ import 'dart:convert';
 import 'auth_service.dart';
 import 'api_service.dart';
 import 'app_navigation.dart';
+import 'notification_delivery_guard.dart';
+import 'session_service.dart';
 
 class NotificationService {
   NotificationService._();
@@ -25,6 +27,7 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
   bool _authListenerRegistered = false;
   Future<void>? _initialization;
+  final _deliveryGuard = NotificationDeliveryGuard();
 
   Future<void> initialize() {
     return _initialization ??= _initialize();
@@ -85,9 +88,27 @@ class NotificationService {
     const ios = DarwinInitializationSettings();
     await _localNotifications.initialize(
       settings: const InitializationSettings(android: android, iOS: ios),
-      onDidReceiveNotificationResponse: (response) =>
-          AppNavigation.openTask(response.payload),
+      onDidReceiveNotificationResponse: (response) async {
+        try {
+          final payload = jsonDecode(response.payload ?? '{}');
+          if (payload is Map<String, dynamic>) await _openPayload(payload);
+        } catch (_) {
+          // Old task-only payloads cannot establish the receiving account.
+        }
+      },
     );
+
+    final launch = await _localNotifications.getNotificationAppLaunchDetails();
+    if (launch?.didNotificationLaunchApp == true) {
+      try {
+        final payload = jsonDecode(
+          launch?.notificationResponse?.payload ?? '{}',
+        );
+        if (payload is Map<String, dynamic>) await _openPayload(payload);
+      } catch (_) {
+        // Inbox remains available if an old notification cannot be resolved.
+      }
+    }
 
     final androidPlugin = _localNotifications
         .resolvePlatformSpecificImplementation<
@@ -175,6 +196,7 @@ class NotificationService {
   }
 
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
+    if (!await _acceptPayload(message.data, 'show')) return;
     if (message.data['type'] == 'BADGE_UPDATED') {
       try {
         await PersonalBadgeCache.refresh();
@@ -187,8 +209,8 @@ class NotificationService {
     debugPrint('Notifica operativa ricevuta in foreground.');
     final notification = message.notification;
     if (notification != null) {
-      _localNotifications.show(
-        id: message.hashCode,
+      await _localNotifications.show(
+        id: notificationDisplayId(message.data['notificationId'] as String),
         title: notification.title ?? ProductBrand.appName,
         body: notification.body ?? 'Nuova comunicazione operativa',
         notificationDetails: NotificationDetails(
@@ -202,21 +224,85 @@ class NotificationService {
           ),
           iOS: const DarwinNotificationDetails(),
         ),
-        payload: message.data['taskId'],
+        payload: jsonEncode(message.data),
       );
     }
   }
 
-  void _handleNotificationOpened(RemoteMessage message) {
-    AppNavigation.openTask(message.data['taskId']?.toString());
+  Future<bool> _acceptPayload(Map<String, dynamic> data, String channel) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return false;
+      final claims = await user.getIdTokenResult();
+      final tenant = claims.claims?['tenantId']?.toString() ?? '';
+      if (FirebaseAuth.instance.currentUser?.uid != user.uid ||
+          !SessionService.isAppRole(claims.claims?['role'])) {
+        return false;
+      }
+      final accepted = await _deliveryGuard.accept(
+        data,
+        uid: user.uid,
+        tenantId: tenant,
+        channel: channel,
+      );
+      return accepted && FirebaseAuth.instance.currentUser?.uid == user.uid;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _openPayload(Map<String, dynamic> data) async {
+    if (!await _acceptPayload(data, 'open')) return;
+    AppNavigation.openTask(data['taskId']?.toString());
+  }
+
+  Future<void> _handleNotificationOpened(RemoteMessage message) =>
+      _openPayload(message.data);
+
+  /// Stable across process restarts; OS updates the same banner on redelivery.
+  static int notificationDisplayId(String id) {
+    var hash = 2166136261;
+    for (final byte in utf8.encode(id)) {
+      hash = ((hash ^ byte) * 16777619) & 0x7fffffff;
+    }
+    return hash;
   }
 
   Future<void> clearDeviceToken() async {
+    // Remove the relationship while the departing user's ID token is valid.
+    // Local token deletion still runs if the backend is unavailable.
     try {
-      await PersonalBadgeCache.clearOwn();
+      final token = await _messaging.getToken();
+      if (token != null && FirebaseAuth.instance.currentUser != null) {
+        final idToken = await AuthService.instance.requireIdToken();
+        await ApiHttpClient.instance
+            .delete(
+              Uri.parse('${ApiService.baseUrl}/api/v1/operator/me/fcm-token'),
+              headers: {
+                'Authorization': 'Bearer $idToken',
+                'Content-Type': 'application/json',
+              },
+              body: jsonEncode({'fcmToken': token}),
+            )
+            .timeout(const Duration(seconds: 10));
+      }
+    } catch (_) {
+      // Deleting the installation token invalidates stale server associations.
+    }
+    try {
       await _messaging.deleteToken();
     } catch (_) {
       /* Logout must still complete. */
+    }
+    try {
+      await _localNotifications.cancelAll();
+    } catch (_) {
+      /* Complete logout. */
+    }
+    try {
+      await PersonalBadgeCache.clearOwn();
+    } catch (_) {
+      /* Complete logout. */
     }
     AppNavigation.requestedTask.value = null;
   }

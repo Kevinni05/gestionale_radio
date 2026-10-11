@@ -16,6 +16,8 @@ import 'offline_sync_service.dart';
 import 'report_submission_state.dart';
 import 'report_draft_store.dart';
 import 'local_operational_store.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'sync_lifecycle_coordinator.dart';
 
 class ApiService {
   ApiService._();
@@ -38,6 +40,7 @@ class ApiService {
 
   static String get baseUrl => _baseUrl;
   static final _client = ApiHttpClient.instance;
+  static SyncLifecycleCoordinator? _syncLifecycle;
 
   static String apiV1Url(String path) {
     final normalized = path.startsWith('/') ? path : '/$path';
@@ -61,6 +64,14 @@ class ApiService {
     await OfflineSyncService.instance.start(
       executor: instance._flushQueuedAction,
     );
+    _syncLifecycle ??= SyncLifecycleCoordinator(
+      networkChanges: Connectivity().onConnectivityChanged.map(
+        (types) => types.any((type) => type != ConnectivityResult.none),
+      ),
+      retry: (force) => OfflineSyncService.instance.retryPending(force: force),
+      onError: (_) =>
+          debugPrint('Sincronizzazione differita; dati locali conservati.'),
+    )..start();
   }
 
   static set baseUrl(String url) {
