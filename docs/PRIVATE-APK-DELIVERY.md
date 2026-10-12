@@ -10,6 +10,8 @@ Nel test i byte immutabili sono in Firestore, chunk 512 KiB, mentre la release d
 
 Sul Samsung collegato sono riusciti seed, force-stop, riapertura e sostituzione APK QA 11000→11001 con bozza/coda/ricevuta conservate. La prova usa applicationId `.qa` e lascia intatta l'app commerciale. Non certifica GPS/camera/FCM/App Check; questi restano nel collaudo sul campo. [Backlog unico](https://github.com/Kevinni05/radiotechwebapp/blob/main/docs/commercial-progress.md) e [costi/handover proposti](https://github.com/Kevinni05/radiotechwebapp/blob/main/docs/COMPANY-COSTS-AND-HANDOVER.md).
 
+Al ricollegamento del 12 ottobre 2026 è stata aggiornata anche l'app di produzione sul telefono: 1.5.1+10077 → 1.5.3+11002. Verificati digest, applicationId, versionCode e identità della firma precedente; sostituzione tramite `adb install -r` riuscita, senza disinstallare o cancellare dati. Avvio e riapertura dopo force-stop riusciti, sessione autenticata conservata e home ONLINE. Il pulsante Aggiornamenti app ha verificato il manifest privato e mostrato «RadioTech 1.5.3 è aggiornato». Screenshot ed evidenze sono privati; non si pubblicano dati del profilo. Non equivale a verificare eventuali bozze reali né a collaudare l'installatore nativo di una release successiva.
+
 ## Alternativa futura: sito con dominio proprio
 
 1. Conservare il keystore esistente e una copia recuperabile separata. Configurare ANDROID_EXPECTED_SIGNING_SHA256 con il certificato di produzione, senza inserire chiavi nel repository.
