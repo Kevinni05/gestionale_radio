@@ -171,7 +171,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          BUILD_NUMBER=$((10000 + GITHUB_RUN_NUMBER))
+          # Keep the canonical release code consistent with privately delivered APKs.
+          # 11000 supersedes the previously distributed 10074; future releases bump pubspec.
+          BUILD_NUMBER=$(sed -nE 's/^version: [^+]+\+([0-9]+)$/\1/p' pubspec.yaml)
+          test -n "$BUILD_NUMBER"
           flutter build apk --release --no-pub \
             --build-number="$BUILD_NUMBER" \
             --dart-define=API_BASE_URL="$MOBILE_API_BASE_URL" \

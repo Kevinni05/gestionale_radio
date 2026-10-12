@@ -17,4 +17,4 @@ Il test operativo nativo è passato sul Samsung SM-S731U collegato: apertura suc
 
 Il sito senza login rende gli APK scaricabili a chi conosce il link. L'accesso ai dati aziendali resta protetto dalle API e dai tenant; l'eventuale distribuzione riservata ai soli clienti richiede una soluzione di accesso al download compatibile con l'app. La firma impedisce l'accettazione di pacchetti alterati, ma non sostituisce il controllo d'accesso al sito.
 
-Build preparata: 1.5.2+2023. Il certificato del keystore esistente ha SHA256 73005990b6bad93b1bb3383121f6dcc2293b3e5e3a60e1ae7eaf09a7d97c4fa4. Conservare il digest specifico dell’APK consegnato: una ricostruzione può avere byte diversi.
+Build preparata: 1.5.2+11000, superiore alla release già distribuita 10074. CI e consegna privata usano lo stesso versionCode canonico di pubspec.yaml; incrementarlo nelle release successive. Il certificato del keystore esistente ha SHA256 73005990b6bad93b1bb3383121f6dcc2293b3e5e3a60e1ae7eaf09a7d97c4fa4. Conservare il digest specifico dell’APK consegnato: una ricostruzione può avere byte diversi.
