@@ -39,7 +39,8 @@ internal object VerifiedApkDownload {
             val connection = uri.toURL().openConnection() as HttpURLConnection
             connection.instanceFollowRedirects = false
             connection.connectTimeout = 15_000
-            connection.readTimeout = 15_000
+            // Private API verifies/stages the complete package before sending headers.
+            connection.readTimeout = if (privateDownload) 60_000 else 15_000
             if (authorization != null) connection.setRequestProperty("Authorization", "Bearer $authorization")
             try {
                 val status = connection.responseCode

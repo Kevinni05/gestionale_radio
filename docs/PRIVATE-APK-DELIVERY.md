@@ -4,7 +4,7 @@ Canale scelto il 12 ottobre 2026: APK firmati tramite area autenticata del servi
 
 ## Area autenticata RadioTech
 
-Build corrente: **1.5.3+11001**, manifest `https://radiotechwebapp.onrender.com/api/v1/distribution/latest.json`. Login Firebase e tenant sono richiesti sia al manifest sia al download APK. Il token viene trasmesso soltanto all'origin API e alla route distribution; nessun token negli URL o verso altri host. Il pannello Sistema della web app consente il download e verifica SHA256. Il codice nativo verifica SHA256, applicationId, versionCode e firma prima dell'installatore Android.
+Build corrente: **1.5.3+11002**, manifest `https://radiotechwebapp.onrender.com/api/v1/distribution/latest.json`. Login Firebase e tenant sono richiesti sia al manifest sia al download APK. Il token viene trasmesso soltanto all'origin API e alla route distribution; nessun token negli URL o verso altri host. Il pannello Sistema della web app consente il download e verifica SHA256. Il codice nativo verifica SHA256, applicationId, versionCode e firma prima dell'installatore Android.
 
 Per il test senza billing i byte immutabili sono in Firestore, chunk 512 KiB, mentre la release disponibile è una puntatore tenant-scoped. Per l'azienda adottare object storage privato con costi e retention approvati, mantenendo lo stesso contratto di API. Pubblicare con `scripts/publish-private-release.ps1` del repository backend: verifica certificato originale e identità dell'APK, carica prima i byte verificati, aggiorna per ultimo il puntatore e registra audit. Conservare chiavi, simboli e artefatti fuori da Git.
 
@@ -26,3 +26,4 @@ Il test operativo nativo è passato sul Samsung SM-S731U collegato: apertura suc
 Il sito senza login rende gli APK scaricabili a chi conosce il link. L'accesso ai dati aziendali resta protetto dalle API e dai tenant; l'eventuale distribuzione riservata ai soli clienti richiede una soluzione di accesso al download compatibile con l'app. La firma impedisce l'accettazione di pacchetti alterati, ma non sostituisce il controllo d'accesso al sito.
 
 Build preparata: 1.5.2+11000, superiore alla release già distribuita 10074. CI e consegna privata usano lo stesso versionCode canonico di pubspec.yaml; incrementarlo nelle release successive. Il certificato del keystore esistente ha SHA256 73005990b6bad93b1bb3383121f6dcc2293b3e5e3a60e1ae7eaf09a7d97c4fa4. Conservare il digest specifico dell’APK consegnato: una ricostruzione può avere byte diversi.
+
