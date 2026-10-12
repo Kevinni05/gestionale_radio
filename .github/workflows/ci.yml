@@ -261,5 +261,6 @@ jobs:
           arch: x86_64
           target: google_apis
           profile: pixel_7_pro
+          disk-size: 2048M
           disable-animations: true
           script: flutter test integration_test/operational_storage_test.dart -d emulator-5554 --reporter expanded
