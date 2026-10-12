@@ -13,7 +13,6 @@ import 'package:signature/signature.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../services/api_service.dart';
 import '../../services/maintenance_report_pdf.dart';
 import '../../services/app_navigation.dart';
 import '../../services/auth_service.dart';
@@ -319,8 +318,9 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
       await Future.wait([
         () async {
           try {
-            final data = await ApiService.instance
-                .getAntennaDetails(widget.antennaId)
+            final data = await ref
+                .read(reportRepositoryProvider)
+                .asset(widget.antennaId)
                 .timeout(const Duration(seconds: 8));
             final name = data['name']?.toString().trim();
             if (name != null && name.isNotEmpty) antenna = name;
@@ -330,8 +330,9 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
         }(),
         () async {
           try {
-            final data = await ApiService.instance
-                .getMyOperatorProfile()
+            final data = await ref
+                .read(reportRepositoryProvider)
+                .profile()
                 .timeout(const Duration(seconds: 8));
             final name = data['fullName']?.toString().trim();
             if (name != null && name.isNotEmpty) operator = name;
@@ -350,10 +351,9 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
 
   Future<void> _restorePendingSubmission() async {
     try {
-      final pending = await ApiService.instance.pendingMaintenanceReport(
-        taskId: widget.taskId,
-        antennaId: widget.antennaId,
-      );
+      final pending = await ref
+          .read(reportRepositoryProvider)
+          .pending(taskId: widget.taskId, antennaId: widget.antennaId);
       if (mounted && pending != null) {
         setState(() {
           _reportQueued = true;
@@ -1571,11 +1571,13 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
       _stage('Verifica di eventuali invii precedenti…');
       final resumed = widget.resumeReport != null
           ? await widget.resumeReport!()
-          : await ApiService.instance.resumeMaintenanceReport(
-              taskId: widget.taskId,
-              antennaId: widget.antennaId,
-              requestKey: _queuedKey,
-            );
+          : await ref
+                .read(reportRepositoryProvider)
+                .resume(
+                  taskId: widget.taskId,
+                  antennaId: widget.antennaId,
+                  requestKey: _queuedKey,
+                );
       if (resumed != null) {
         await _clearDraft();
         if (mounted) {
@@ -1670,12 +1672,14 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
         await _saveDraft(force: true);
         _stage('Invio comunicazione urgente alla centrale…');
         _urgentSignal = await _urgentSignal!.deliver((signal) async {
-          await ApiService.instance.sendCentralUrgentSignal(
-            description: signal.description,
-            assetId: signal.assetId,
-            taskId: signal.taskId,
-            operationId: signal.operationId,
-          );
+          await ref
+              .read(reportRepositoryProvider)
+              .urgent(
+                description: signal.description,
+                assetId: signal.assetId,
+                taskId: signal.taskId,
+                operationId: signal.operationId,
+              );
         });
         await _saveDraft(force: true);
         _stage('Segnalazione ricevuta dalla centrale. Invio del report…');

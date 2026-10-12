@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'api_service.dart';
+import 'auth_service.dart';
 
 class AndroidUpdateCheck {
   const AndroidUpdateCheck(
@@ -34,6 +35,8 @@ class AndroidUpdateService {
     try {
       final request = http.Request('GET', manifestUri())
         ..followRedirects = false;
+      final token = await _authorization(manifestUri());
+      if (token != null) request.headers['Authorization'] = 'Bearer $token';
       final response = await client
           .send(request)
           .timeout(const Duration(seconds: 65));
@@ -158,11 +161,41 @@ class AndroidUpdateService {
         update.versionCode == null) {
       throw const FormatException('Download non consentito.');
     }
+    final authorization = await _authorization(uri);
     await _channel.invokeMethod('installVerifiedUpdate', {
       'url': uri.toString(),
       'sha256': update.sha256,
       'signingSha256': update.signingSha256,
       'versionCode': update.versionCode,
+      'authorization': ?authorization,
     });
+  }
+
+  static Future<String?> _authorization(Uri uri) async {
+    final api = Uri.parse(ApiService.baseUrl);
+    return authorizationFor(
+      uri,
+      api,
+      () =>
+          AuthService.instance.currentUser?.getIdToken() ??
+          Future<String?>.value(),
+    );
+  }
+
+  static Future<String?> authorizationFor(
+    Uri uri,
+    Uri api,
+    Future<String?> Function() tokenLoader,
+  ) async {
+    if (uri.scheme != 'https' ||
+        uri.origin != api.origin ||
+        !uri.path.startsWith('/api/v1/distribution/')) {
+      return null;
+    }
+    final token = await tokenLoader().timeout(const Duration(seconds: 15));
+    if (token == null) {
+      throw StateError('Accedi prima di scaricare un aggiornamento aziendale.');
+    }
+    return token;
   }
 }

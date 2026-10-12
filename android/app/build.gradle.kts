@@ -56,6 +56,9 @@ android {
 
     defaultConfig {
         applicationId = System.getenv("ANDROID_APPLICATION_ID") ?: "com.example.gestionale_radio"
+        require(System.getenv("RADIOTECH_QA_BUILD") != "true" || applicationId!!.endsWith(".qa")) {
+            "QA builds require an isolated applicationId ending in .qa."
+        }
         manifestPlaceholders["appLabel"] =
             System.getenv("ANDROID_APP_LABEL") ?: "RadioTech"
         buildConfigField("String", "PRIVATE_UPDATE_ORIGIN", "\"$privateUpdateOrigin\"")

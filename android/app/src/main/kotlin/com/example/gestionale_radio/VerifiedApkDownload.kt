@@ -25,10 +25,11 @@ internal object VerifiedApkDownload {
     fun redirectUrl(uri: URI): Boolean = privateSiteUrl(uri) || secureUrl(uri) && uri.host in setOf("github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com")
     private fun secureUrl(uri: URI): Boolean = uri.scheme == "https" && uri.userInfo == null && uri.fragment == null && (uri.port == -1 || uri.port == 443)
 
-    fun download(url: String, digest: String, directory: File): File {
+    fun download(url: String, digest: String, directory: File, authorization: String? = null): File {
         var uri = URI(url)
         require(initialUrl(uri) && digestPattern.matches(digest))
         val privateDownload = privateSiteUrl(uri)
+        require(authorization == null || privateDownload && authorization.matches(Regex("^[A-Za-z0-9._-]{1,10000}$")))
         directory.mkdirs()
         // Retain only the most recent verified APK; a new click cannot consume unbounded disk.
         directory.listFiles()?.forEach { it.delete() }
@@ -39,6 +40,7 @@ internal object VerifiedApkDownload {
             connection.instanceFollowRedirects = false
             connection.connectTimeout = 15_000
             connection.readTimeout = 15_000
+            if (authorization != null) connection.setRequestProperty("Authorization", "Bearer $authorization")
             try {
                 val status = connection.responseCode
                 if (status in listOf(301, 302, 303, 307, 308)) {
