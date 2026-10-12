@@ -3,9 +3,9 @@ on:
   workflow_dispatch:
     inputs:
       update_manifest_url:
-        description: Optional HTTPS manifest URL for the owner website
+        description: HTTPS manifest URL for authenticated private delivery
         type: string
-        default: ''
+        default: 'https://radiotechwebapp.onrender.com/api/v1/distribution/latest.json'
       publish:
         description: Publish the verified APK as a public GitHub release
         type: boolean
@@ -77,7 +77,7 @@ jobs:
           fs.copyFileSync('build/app/outputs/flutter-apk/app-release.apk',`artifacts/${name}.apk`);
           fs.copyFileSync('build/app/outputs/bundle/release/app-release.aab',`artifacts/${name}.aab`);
           const repoUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}`;
-          const manifest = {available:false,channel:process.env.UPDATE_MANIFEST_URL?'PRIVATE_SITE':'GITHUB_RELEASES',applicationId:process.env.ANDROID_APPLICATION_ID,versionName:match[1],versionCode:Number(match[2]),signingSha256:certificate,sha256:crypto.createHash('sha256').update(fs.readFileSync(`artifacts/${name}.apk`)).digest('hex'),downloadUrl:process.env.UPDATE_MANIFEST_URL?new URL(`${name}.apk`,process.env.UPDATE_MANIFEST_URL).href:`${repoUrl}/releases/download/${tag}/${name}.apk`};
+          const manifest = {available:false,filename:`${name}.apk`,channel:process.env.UPDATE_MANIFEST_URL?'PRIVATE_SITE':'GITHUB_RELEASES',applicationId:process.env.ANDROID_APPLICATION_ID,versionName:match[1],versionCode:Number(match[2]),signingSha256:certificate,sha256:crypto.createHash('sha256').update(fs.readFileSync(`artifacts/${name}.apk`)).digest('hex'),downloadUrl:process.env.UPDATE_MANIFEST_URL?new URL(`${name}.apk`,process.env.UPDATE_MANIFEST_URL).href:`${repoUrl}/releases/download/${tag}/${name}.apk`};
           fs.writeFileSync('artifacts/mobile-release.json',JSON.stringify(manifest,null,2));
           if(process.env.UPDATE_MANIFEST_URL)fs.writeFileSync('artifacts/latest.json',JSON.stringify({...manifest,available:true},null,2));
           fs.writeFileSync('artifacts/avviso-aggiornamento.txt',`È disponibile ${name}. Apri RadioTech e controlla gli aggiornamenti. Il pacchetto viene verificato prima dell'installazione.`);
