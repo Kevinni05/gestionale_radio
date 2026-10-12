@@ -53,7 +53,7 @@ Write-Output 'Store release-symbols privately alongside the exact build number.'
 if ($UpdateManifestUrl) {
     $applicationId = if ($env:ANDROID_APPLICATION_ID) { $env:ANDROID_APPLICATION_ID } else { 'com.example.gestionale_radio' }
     $download = [Uri]::new($manifestTarget, "$releaseName.apk").AbsoluteUri
-    $manifest = [ordered]@{ available=$true; applicationId=$applicationId; versionName=$releaseVersion.Groups[1].Value; versionCode=[int]$BuildNumber; signingSha256=$expectedSigningSha256.ToLowerInvariant(); sha256=(Get-FileHash -LiteralPath "artifacts/$releaseName.apk" -Algorithm SHA256).Hash.ToLowerInvariant(); downloadUrl=$download }
+    $manifest = [ordered]@{ available=$true; applicationId=$applicationId; versionName=$releaseVersion.Groups[1].Value; versionCode=[int]$BuildNumber; signingSha256=$expectedSigningSha256.ToLowerInvariant(); filename="$releaseName.apk"; channel='PRIVATE_SITE'; sha256=(Get-FileHash -LiteralPath "artifacts/$releaseName.apk" -Algorithm SHA256).Hash.ToLowerInvariant(); downloadUrl=$download }
     $manifest | ConvertTo-Json | Set-Content -LiteralPath artifacts/latest.json -Encoding utf8NoBOM
     "È disponibile RadioTech $($releaseVersion.Groups[1].Value). Apri l'app e seleziona Controlla aggiornamenti. L'app verificherà il pacchetto prima dell'installazione." | Set-Content -LiteralPath artifacts/avviso-aggiornamento.txt -Encoding utf8NoBOM
 }

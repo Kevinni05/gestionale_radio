@@ -20,6 +20,10 @@ class MainActivity : FlutterActivity() {
   MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "radiotech/updates").setMethodCallHandler { call, result ->
    try {
     when (call.method) {
+     "qaRecoveryPhase" -> {
+      require(packageName.endsWith(".qa")) { "QA application required" }
+      result.success(intent.getStringExtra("radiotechQaPhase") ?: "seed")
+     }
      "installedApp" -> {
       @Suppress("DEPRECATION")
       val info = packageManager.getPackageInfo(packageName, if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES)
@@ -39,7 +43,7 @@ class MainActivity : FlutterActivity() {
       Thread({
        var file: java.io.File? = null
        try {
-        val downloaded = VerifiedApkDownload.download(url, digest, java.io.File(cacheDir, "verified_updates"))
+          val downloaded = VerifiedApkDownload.download(url, digest, java.io.File(cacheDir, "verified_updates"), call.argument<String>("authorization"))
         file = downloaded
         @Suppress("DEPRECATION")
         val flags = if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES

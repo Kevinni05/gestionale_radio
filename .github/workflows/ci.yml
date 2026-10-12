@@ -91,7 +91,7 @@ jobs:
   distribute-android:
     name: Distribute Android to Firebase
     needs: [quality, android-qa]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ANDROID_DISTRIBUTION_CHANNEL == 'FIREBASE_APP_DISTRIBUTION'
     runs-on: ubuntu-latest
     permissions:
       contents: read
