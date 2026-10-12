@@ -171,7 +171,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          BUILD_NUMBER=$((10000 + GITHUB_RUN_NUMBER))
+          # Keep the canonical release code consistent with privately delivered APKs.
+          # 11000 supersedes the previously distributed 10074; future releases bump pubspec.
+          BUILD_NUMBER=$(sed -nE 's/^version: [^+]+\+([0-9]+)$/\1/p' pubspec.yaml)
+          test -n "$BUILD_NUMBER"
           flutter build apk --release --no-pub \
             --build-number="$BUILD_NUMBER" \
             --dart-define=API_BASE_URL="$MOBILE_API_BASE_URL" \
@@ -228,3 +231,47 @@ jobs:
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 14
 
+
+  android-device:
+    name: Android emulator persistence and recovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      RADIOTECH_QA_BUILD: 'true'
+      ANDROID_APPLICATION_ID: com.example.gestionale_radio.qa
+      ANDROID_APP_LABEL: RadioTech QA
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - run: flutter pub get --enforce-lockfile
+      - name: Free hosted runner disk for Android userdata
+        # These preinstalled language SDKs are unused by this isolated Android job.
+        shell: bash
+        run: |
+          for unused_sdk in /usr/share/dotnet /usr/local/.ghcup /opt/ghc /usr/local/share/boost; do
+            if [ -d "$unused_sdk" ]; then sudo rm -rf -- "$unused_sdk"; fi
+          done
+          df -h "$RUNNER_TEMP"
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_7_pro
+          disk-size: 2048M
+          disable-animations: true
+          script: flutter test integration_test/operational_storage_test.dart -d emulator-5554 --reporter expanded

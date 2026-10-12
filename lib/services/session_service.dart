@@ -35,8 +35,13 @@ class SessionService {
   String? get tenantId => _tenantId;
   String? get operatorId => _operatorId;
   bool get isCustomer => _role == 'CUSTOMER';
-  bool get managementOnly =>
-      {'CHIEF_EXECUTIVE', 'CAPO', 'NETWORK_MANAGER', 'ENGINEER', 'VIEWER'}.contains(_role);
+  bool get managementOnly => {
+    'CHIEF_EXECUTIVE',
+    'CAPO',
+    'NETWORK_MANAGER',
+    'ENGINEER',
+    'VIEWER',
+  }.contains(_role);
   bool get canManage => {'ADMIN', 'SUPER_ADMIN'}.contains(_role);
   bool get canManageAccounts =>
       {'ADMIN', 'SUPER_ADMIN', 'CHIEF_EXECUTIVE', 'CAPO'}.contains(_role);
@@ -119,4 +124,3 @@ class SessionService {
     _operatorId = operator == null || operator.isEmpty ? null : operator;
   }
 }
-

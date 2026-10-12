@@ -24,20 +24,29 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
   late Future<Map<String, dynamic>> _notes;
   final _noteInput = TextEditingController();
   bool _saving = false;
-  Future<Map<String, dynamic>> _fetchNotes() => ApiService.instance.getAntennaNotes(widget.antennaId);
+  Future<Map<String, dynamic>> _fetchNotes() =>
+      ApiService.instance.getAntennaNotes(widget.antennaId);
   Future<void> _saveNote() async {
     if (_saving || _noteInput.text.trim().isEmpty) return;
     setState(() => _saving = true);
     try {
-      await ApiService.instance.addAntennaNote(widget.antennaId, _noteInput.text.trim());
+      await ApiService.instance.addAntennaNote(
+        widget.antennaId,
+        _noteInput.text.trim(),
+      );
       _noteInput.clear();
       if (mounted) setState(() => _notes = _fetchNotes());
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Salvataggio non riuscito: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Salvataggio non riuscito: $e')));
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
+
   late final Animation<double> _fadeAnimation;
 
   @override
@@ -209,7 +218,8 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
                     builder: (_) => ReportClosureScreen(
                       antennaId: antenna.id,
                       checklistResults: {
-                        for (final item in antenna.checklistTemplate) item: false,
+                        for (final item in antenna.checklistTemplate)
+                          item: false,
                       },
                     ),
                   ),
@@ -222,16 +232,45 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
               FutureBuilder<Map<String, dynamic>>(
                 future: _notes,
                 builder: (context, snapshot) {
-                  if (snapshot.hasError) return const Text('Note non disponibili: servizio da configurare.');
+                  if (snapshot.hasError) {
+                    return const Text(
+                      'Note non disponibili: servizio da configurare.',
+                    );
+                  }
                   if (!snapshot.hasData) return const LinearProgressIndicator();
                   final notes = snapshot.data!['notes'];
                   final items = notes is List ? notes : const [];
-                  return Column(children: [
-                    for (final note in items)
-                      if (note is Map) Card(child: ListTile(title: Text((note['text'] ?? '').toString()), subtitle: Text((note['createdAt'] ?? '').toString()))),
-                    TextField(controller: _noteInput, maxLines: 3, maxLength: 2000, decoration: const InputDecoration(labelText: 'Nota condivisa', border: OutlineInputBorder())),
-                    Align(alignment: Alignment.centerRight, child: FilledButton.icon(onPressed: _saving ? null : _saveNote, icon: const Icon(Icons.save_outlined), label: const Text('Salva nota'))),
-                  ]);
+                  return Column(
+                    children: [
+                      for (final note in items)
+                        if (note is Map)
+                          Card(
+                            child: ListTile(
+                              title: Text((note['text'] ?? '').toString()),
+                              subtitle: Text(
+                                (note['createdAt'] ?? '').toString(),
+                              ),
+                            ),
+                          ),
+                      TextField(
+                        controller: _noteInput,
+                        maxLines: 3,
+                        maxLength: 2000,
+                        decoration: const InputDecoration(
+                          labelText: 'Nota condivisa',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: FilledButton.icon(
+                          onPressed: _saving ? null : _saveNote,
+                          icon: const Icon(Icons.save_outlined),
+                          label: const Text('Salva nota'),
+                        ),
+                      ),
+                    ],
+                  );
                 },
               ),
               const SizedBox(height: 24),
@@ -243,25 +282,29 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
               const SizedBox(height: 16),
               LayoutBuilder(
                 builder: (context, constraints) => GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: constraints.maxWidth >= 650 ? 3 : constraints.maxWidth < 340 ? 1 : 2,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  mainAxisExtent: 144,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: constraints.maxWidth >= 650
+                        ? 3
+                        : constraints.maxWidth < 340
+                        ? 1
+                        : 2,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    mainAxisExtent: 144,
+                  ),
+                  itemCount: specCards.length,
+                  itemBuilder: (context, index) {
+                    final entry = specCards[index];
+                    return _buildEnhancedTechCard(
+                      context,
+                      entry.key,
+                      entry.value.toString(),
+                      index,
+                    );
+                  },
                 ),
-                itemCount: specCards.length,
-                itemBuilder: (context, index) {
-                  final entry = specCards[index];
-                  return _buildEnhancedTechCard(
-                    context,
-                    entry.key,
-                    entry.value.toString(),
-                    index,
-                  );
-                },
-              ),
               ),
               const SizedBox(height: 34),
               _buildActionButton(context, antenna),

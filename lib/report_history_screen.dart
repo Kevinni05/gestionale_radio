@@ -459,10 +459,7 @@ class _ReportFileScreenState extends State<ReportFileScreen> {
   Future<Uint8List> _read() async {
     final ref = widget.reference;
     if (RegExp(r'^radiotech-file:[a-f0-9]{64}$').hasMatch(ref)) {
-      final result = await CompanyApi.instance.request(
-        '/files/${ref.substring(15)}',
-      );
-      return base64Decode(result['base64'] as String);
+      return CompanyApi.instance.readAttachment(ref.substring(15));
     }
     final uri = Uri.tryParse(ref);
     if (uri?.scheme != 'https' ||

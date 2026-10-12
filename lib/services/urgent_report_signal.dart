@@ -23,9 +23,10 @@ class UrgentReportSignal {
     String? taskId,
   }) {
     final random = Random.secure();
-    final id = List.generate(16, (_) => random.nextInt(256))
-        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
-        .join();
+    final id = List.generate(
+      16,
+      (_) => random.nextInt(256),
+    ).map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
     return UrgentReportSignal(
       operationId: 'urgent-$id',
       description: description.trim(),
@@ -38,9 +39,14 @@ class UrgentReportSignal {
     final id = data['operationId'];
     final description = data['description'];
     final asset = data['assetId'];
-    if (id is! String || id.isEmpty || description is! String ||
-        description.trim().isEmpty || asset is! String) {
-      throw const FormatException('Stato della segnalazione urgente non valido.');
+    if (id is! String ||
+        id.isEmpty ||
+        description is! String ||
+        description.trim().isEmpty ||
+        asset is! String) {
+      throw const FormatException(
+        'Stato della segnalazione urgente non valido.',
+      );
     }
     return UrgentReportSignal(
       operationId: id,

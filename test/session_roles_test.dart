@@ -18,4 +18,3 @@ void main() {
     expect(SessionService.isAppRole(null), isFalse);
   });
 }
-

@@ -172,13 +172,36 @@ void main() {
   });
 
   test('branded release matches the installed application identity', () async {
-    final branded = {...await installed(), 'applicationId': 'it.cliente.field', 'displayName': 'Cliente Field'};
-    final release = {...manifest(), 'applicationId': 'it.cliente.field',
-      'downloadUrl': 'https://github.com/Kevinni05/gestionale_radio/releases/download/v1.5.1-2022/Cliente-Field-1.5.1-2022.apk'};
-    final result = await AndroidUpdateService(installedApp: () async => branded, manifest: () async => release).check();
+    final branded = {
+      ...await installed(),
+      'applicationId': 'it.cliente.field',
+      'displayName': 'Cliente Field',
+    };
+    final release = {
+      ...manifest(),
+      'applicationId': 'it.cliente.field',
+      'downloadUrl':
+          'https://github.com/Kevinni05/gestionale_radio/releases/download/v1.5.1-2022/Cliente-Field-1.5.1-2022.apk',
+    };
+    final result = await AndroidUpdateService(
+      installedApp: () async => branded,
+      manifest: () async => release,
+    ).check();
     expect(result.url, isNotNull);
     expect(result.message, contains('Cliente Field'));
-    await expectLater(AndroidUpdateService(installedApp: installed, manifest: () async => release).check(), throwsFormatException);
-    await expectLater(AndroidUpdateService(installedApp: () async => {...branded}..remove('applicationId'), manifest: () async => release).check(), throwsFormatException);
+    await expectLater(
+      AndroidUpdateService(
+        installedApp: installed,
+        manifest: () async => release,
+      ).check(),
+      throwsFormatException,
+    );
+    await expectLater(
+      AndroidUpdateService(
+        installedApp: () async => {...branded}..remove('applicationId'),
+        manifest: () async => release,
+      ).check(),
+      throwsFormatException,
+    );
   });
 }

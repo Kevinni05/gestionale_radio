@@ -114,6 +114,7 @@ class OperationalStore(context: Context, messenger: BinaryMessenger? = null, pri
 
     private fun validateOperationalKey(value: String) {
         if (!(value.startsWith("report_draft_") || value.startsWith("report_receipt_") ||
+                value.startsWith("notification_receipts_") ||
                 value.startsWith("offline_idempotency_") || value == "offline_sync_queue" || value == "offline_sync_queue_backup")) throw IllegalArgumentException()
     }
 

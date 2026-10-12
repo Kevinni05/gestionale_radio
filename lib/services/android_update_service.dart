@@ -23,6 +23,8 @@ class AndroidUpdateService {
     Future<Map> Function()? manifest,
   }) : _installedApp = installedApp ?? _installed,
        _manifest = manifest ?? _latest;
+  static const privateManifest = String.fromEnvironment('UPDATE_MANIFEST_URL');
+  static const privateOrigin = String.fromEnvironment('APK_UPDATE_ORIGIN');
   static const _channel = MethodChannel('radiotech/updates');
   final Future<Map> Function() _installedApp, _manifest;
   static Future<Map> _installed() async =>
@@ -30,10 +32,8 @@ class AndroidUpdateService {
   static Future<Map> _latest() async {
     final client = http.Client();
     try {
-      final request = http.Request(
-        'GET',
-        Uri.parse('${ApiService.baseUrl}/api/v1/mobile/releases/latest'),
-      )..followRedirects = false;
+      final request = http.Request('GET', manifestUri())
+        ..followRedirects = false;
       final response = await client
           .send(request)
           .timeout(const Duration(seconds: 65));
@@ -109,16 +109,46 @@ class AndroidUpdateService {
     );
   }
 
+  static Uri manifestUri() {
+    if (privateManifest.isEmpty) {
+      return Uri.parse('${ApiService.baseUrl}/api/v1/mobile/releases/latest');
+    }
+    final uri = Uri.parse(privateManifest);
+    if (!isPrivateSiteUrl(uri)) {
+      throw const FormatException('Manifest HTTPS non consentito.');
+    }
+    return uri;
+  }
+
+  static bool isPrivateSiteUrl(Uri uri, {String origin = privateOrigin}) {
+    final configured = Uri.tryParse(origin);
+    return configured != null &&
+        configured.scheme == 'https' &&
+        configured.host.isNotEmpty &&
+        configured.port == 443 &&
+        configured.userInfo.isEmpty &&
+        configured.query.isEmpty &&
+        configured.fragment.isEmpty &&
+        configured.path.isEmpty &&
+        uri.origin == configured.origin &&
+        uri.scheme == 'https' &&
+        uri.userInfo.isEmpty &&
+        uri.query.isEmpty &&
+        uri.fragment.isEmpty &&
+        !uri.pathSegments.any((part) => part == '..' || part == '.');
+  }
+
   static bool isTrustedDownload(Uri uri) =>
+      (isPrivateSiteUrl(uri) && uri.path.endsWith('.apk')) ||
       uri.scheme == 'https' &&
-      uri.host == 'github.com' &&
-      (uri.port == 443) &&
-      uri.userInfo.isEmpty &&
-      uri.query.isEmpty &&
-      uri.fragment.isEmpty &&
-      RegExp(
-        r'^/Kevinni05/gestionale_radio/releases/download/v[0-9A-Za-z.\-]+/[A-Za-z0-9][0-9A-Za-z._\-]*-[0-9A-Za-z.\-]+\.apk$',
-      ).hasMatch(uri.path);
+          uri.host == 'github.com' &&
+          (uri.port == 443) &&
+          uri.userInfo.isEmpty &&
+          uri.query.isEmpty &&
+          uri.fragment.isEmpty &&
+          RegExp(
+            r'^/Kevinni05/gestionale_radio/releases/download/v[0-9A-Za-z.\-]+/[A-Za-z0-9][0-9A-Za-z._\-]*-[0-9A-Za-z.\-]+\.apk$',
+          ).hasMatch(uri.path);
   static Future<void> installVerifiedUpdate(AndroidUpdateCheck update) async {
     final uri = update.url;
     if (uri == null ||
