@@ -28,7 +28,7 @@ jobs:
       ANDROID_APP_LABEL: ${{ vars.ANDROID_APP_LABEL || 'RadioTech' }}
       MOBILE_APP_DISPLAY_NAME: ${{ vars.MOBILE_APP_DISPLAY_NAME || 'RadioTech' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
