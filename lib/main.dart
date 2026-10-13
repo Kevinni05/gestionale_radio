@@ -12,6 +12,7 @@ import 'pro_suite_screen.dart';
 import 'pending_approval_screen.dart';
 import 'services/session_service.dart';
 import 'services/session_route_guard.dart';
+import 'services/operator_presence_service.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
@@ -60,6 +61,7 @@ Future<void> _initializeApplication() async {
   await ApiService.initialize();
 
   unawaited(NotificationService.instance.initialize());
+  OperatorPresenceService.instance.initialize();
 }
 
 class GestionaleRadioApp extends StatelessWidget {

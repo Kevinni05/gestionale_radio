@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'notification_service.dart';
+import 'operator_presence_service.dart';
 import 'offline_task_pack_store.dart';
 
 class AuthService {
@@ -92,6 +93,7 @@ class AuthService {
     if (auth == null) {
       return;
     }
+    await OperatorPresenceService.instance.stop();
     await NotificationService.instance.clearDeviceToken();
     try {
       await OfflineTaskPackStore.clearOwn();
