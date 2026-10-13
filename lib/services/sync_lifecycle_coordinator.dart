@@ -24,7 +24,7 @@ class SyncLifecycleCoordinator with WidgetsBindingObserver {
   bool _requested = false;
   bool _force = false;
 
-  void start() {
+  void start({bool retryImmediately = true}) {
     if (_started) return;
     _started = true;
     final state = WidgetsBinding.instance.lifecycleState;
@@ -33,7 +33,7 @@ class SyncLifecycleCoordinator with WidgetsBindingObserver {
     _subscription = networkChanges.distinct().listen((available) {
       if (available) request(force: true);
     }, onError: (Object error) => onError?.call(error));
-    request();
+    if (retryImmediately) request();
   }
 
   void request({bool force = false}) {

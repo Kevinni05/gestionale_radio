@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 
@@ -15,8 +14,15 @@ class OperatorPresenceService with WidgetsBindingObserver {
   OperatorPresenceService._();
   static final instance = OperatorPresenceService._();
   static const _roles = {
-    'OPERATOR', 'OPERATORE', 'VIEWER', 'ADMIN', 'SUPER_ADMIN',
-    'CAPO', 'CHIEF_EXECUTIVE', 'NETWORK_MANAGER', 'ENGINEER',
+    'OPERATOR',
+    'OPERATORE',
+    'VIEWER',
+    'ADMIN',
+    'SUPER_ADMIN',
+    'CAPO',
+    'CHIEF_EXECUTIVE',
+    'NETWORK_MANAGER',
+    'ENGINEER',
   };
   FirebaseDatabase? _database;
   DatabaseReference? _account;
@@ -31,7 +37,8 @@ class OperatorPresenceService with WidgetsBindingObserver {
   void initialize() {
     if (_initialized) return;
     _initialized = true;
-    _foreground = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    _foreground =
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
     WidgetsBinding.instance.addObserver(this);
     FirebaseAuth.instance.idTokenChanges().listen((_) => _schedule());
     _schedule();
@@ -79,24 +86,33 @@ class OperatorPresenceService with WidgetsBindingObserver {
       await stop();
       return;
     }
-    if (!_foreground || FirebaseAuth.instance.currentUser?.uid != user.uid ||
-        revision != _revision) return;
+    if (!_foreground ||
+        FirebaseAuth.instance.currentUser?.uid != user.uid ||
+        revision != _revision) {
+      return;
+    }
 
     if (_database == null) {
-      final response = await http.get(
-        Uri.parse('${ApiService.baseUrl}/api/v1/auth/public-config'),
-      ).timeout(const Duration(seconds: 10));
+      final response = await http
+          .get(Uri.parse('${ApiService.baseUrl}/api/v1/auth/public-config'))
+          .timeout(const Duration(seconds: 10));
       if (response.statusCode != 200) return;
       final config = jsonDecode(response.body) as Map<String, dynamic>;
       final url = config['databaseURL']?.toString() ?? '';
       final uri = Uri.tryParse(url);
-      if (uri == null || uri.scheme != 'https' ||
+      if (uri == null ||
+          uri.scheme != 'https' ||
           !(uri.host.endsWith('.firebasedatabase.app') ||
-            uri.host.endsWith('.firebaseio.com')) ||
-          uri.userInfo.isNotEmpty || uri.hasQuery || uri.hasFragment) return;
+              uri.host.endsWith('.firebaseio.com')) ||
+          uri.userInfo.isNotEmpty ||
+          uri.hasQuery ||
+          uri.hasFragment) {
+        return;
+      }
       if (!_foreground || revision != _revision) return;
       _database = FirebaseDatabase.instanceFor(
-        app: FirebaseAuth.instance.app, databaseURL: url,
+        app: FirebaseAuth.instance.app,
+        databaseURL: url,
       );
       await _database!.goOffline();
     }
@@ -108,35 +124,64 @@ class OperatorPresenceService with WidgetsBindingObserver {
       _scope = scope;
       _account = _database!.ref('presence/$scope');
       _connectionId = _account!.child('connections').push().key!;
-      _connected = _database!.ref('.info/connected').onValue.listen((event) {
-        if (event.snapshot.value == true && _foreground) {
-          final activeScope = _scope;
-          _work = _work.then((_) => _publish(activeScope)).catchError((Object error) {
-            debugPrint('Connessione presenza non disponibile: ${error.runtimeType}');
-          });
-        }
-      }, onError: (Object error) {
-        debugPrint('Monitor presenza non disponibile: ${error.runtimeType}');
-      });
+      _connected = _database!
+          .ref('.info/connected')
+          .onValue
+          .listen(
+            (event) {
+              if (event.snapshot.value == true && _foreground) {
+                final activeScope = _scope;
+                _work = _work.then((_) => _publish(activeScope)).catchError((
+                  Object error,
+                ) {
+                  debugPrint(
+                    'Connessione presenza non disponibile: ${error.runtimeType}',
+                  );
+                });
+              }
+            },
+            onError: (Object error) {
+              debugPrint(
+                'Monitor presenza non disponibile: ${error.runtimeType}',
+              );
+            },
+          );
     }
-    if (_foreground && FirebaseAuth.instance.currentUser?.uid == user.uid &&
-        revision == _revision) await _database!.goOnline();
+    if (_foreground &&
+        FirebaseAuth.instance.currentUser?.uid == user.uid &&
+        revision == _revision) {
+      await _database!.goOnline();
+    }
   }
 
   Future<void> _publish(String? scope) async {
     final account = _account;
     final connectionId = _connectionId;
     final revision = _revision;
-    if (!_foreground || scope != _scope || account == null || connectionId == null) return;
+    if (!_foreground ||
+        scope != _scope ||
+        account == null ||
+        connectionId == null) {
+      return;
+    }
     // Register cleanup BEFORE announcing online. This also updates lastSeen
     // using the server clock and preserves other devices' connection entries.
-    await account.onDisconnect().update({
-      'connections/$connectionId': null,
-      'lastSeen': ServerValue.timestamp,
-    }).timeout(const Duration(seconds: 5));
-    if (!_foreground || scope != _scope || revision != _revision ||
-        FirebaseAuth.instance.currentUser?.uid != scope?.split('/').last) return;
-    await account.child('connections/$connectionId').set(true)
+    await account
+        .onDisconnect()
+        .update({
+          'connections/$connectionId': null,
+          'lastSeen': ServerValue.timestamp,
+        })
+        .timeout(const Duration(seconds: 5));
+    if (!_foreground ||
+        scope != _scope ||
+        revision != _revision ||
+        FirebaseAuth.instance.currentUser?.uid != scope?.split('/').last) {
+      return;
+    }
+    await account
+        .child('connections/$connectionId')
+        .set(true)
         .timeout(const Duration(seconds: 5));
   }
 }

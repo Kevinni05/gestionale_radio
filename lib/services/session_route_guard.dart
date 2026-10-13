@@ -29,7 +29,7 @@ class _SessionRouteGuardState extends State<SessionRouteGuard> {
     _subscription = widget.identities.listen((identity) {
       if (identity == _identity) return;
       _identity = identity;
-      AppNavigation.requestedTask.value = null;
+      AppNavigation.clearRequests();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
       });

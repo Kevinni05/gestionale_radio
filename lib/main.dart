@@ -12,6 +12,7 @@ import 'pro_suite_screen.dart';
 import 'pending_approval_screen.dart';
 import 'services/session_service.dart';
 import 'services/session_route_guard.dart';
+import 'services/notification_route_handler.dart';
 import 'services/operator_presence_service.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -171,10 +172,13 @@ class _AccessGateState extends State<_AccessGate> {
         if (done) _last = state;
 
         if (state == AccessState.approved) {
-          return SessionService.instance.isCustomer ||
-                  SessionService.instance.managementOnly
-              ? const ProSuiteScreen()
-              : const HomeScreen();
+          return NotificationRouteHandler(
+            child:
+                SessionService.instance.isCustomer ||
+                    SessionService.instance.managementOnly
+                ? const ProSuiteScreen()
+                : const HomeScreen(),
+          );
         }
 
         return PendingApprovalScreen(

@@ -30,6 +30,7 @@ class NotificationDeliveryGuard {
     required String uid,
     required String tenantId,
     required String channel,
+    Future<void> Function()? onAccept,
   }) async {
     if (!belongsTo(data, uid: uid, tenantId: tenantId)) return false;
     final previous = _access;
@@ -47,6 +48,8 @@ class NotificationDeliveryGuard {
       final ids = decoded.cast<String>().toList();
       final id = data['notificationId'] as String;
       if (ids.contains(id)) return false;
+      // Failed display/navigation attempts must remain retryable.
+      if (onAccept != null) await onAccept();
       ids.add(id);
       if (ids.length > maxReceipts) {
         ids.removeRange(0, ids.length - maxReceipts);
