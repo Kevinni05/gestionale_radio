@@ -79,6 +79,8 @@ class CompanyApi {
     Map<String, dynamic>? body,
   }) async {
     final uid = AuthService.instance.currentUid;
+    final revision = AuthService.instance.sessionRevision;
+    final tenant = SessionService.instance.tenantId;
     final token = await AuthService.instance.requireIdToken();
     final headers = {
       'Authorization': 'Bearer $token',
@@ -100,7 +102,9 @@ class CompanyApi {
       ),
       _ => await _client.get(url, headers: headers),
     };
-    if (uid != AuthService.instance.currentUid) {
+    if (uid != AuthService.instance.currentUid ||
+        revision != AuthService.instance.sessionRevision ||
+        tenant != SessionService.instance.tenantId) {
       throw CompanyApiException(
         'Sessione cambiata. Apri nuovamente la sezione.',
       );

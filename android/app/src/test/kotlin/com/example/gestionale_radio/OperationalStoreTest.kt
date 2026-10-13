@@ -16,6 +16,24 @@ import java.io.File
 class OperationalStoreTest {
     private fun key() = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
 
+    @Test fun notificationOwnerSurvivesReopenWithoutExpandingTheKeyNamespace() {
+        val context = RuntimeEnvironment.getApplication()
+        context.deleteDatabase("radiotech-operational-v1.db")
+        val secret = key()
+        var store = OperationalStore(context, testKey = secret)
+        store.write(mapOf("notification_device_owner" to "operator-a"))
+        assertThrows(IllegalArgumentException::class.java) {
+            store.write(mapOf("notification_arbitrary_private_key" to "rejected"))
+        }
+        store.close().get()
+        store = OperationalStore(context, testKey = secret)
+        assertEquals("operator-a", store.read("notification_device_owner")["value"])
+        store.write(mapOf("notification_device_owner" to null))
+        assertNull(store.read("notification_device_owner")["value"])
+        store.close().get()
+        context.deleteDatabase("radiotech-operational-v1.db")
+    }
+
     @Test fun encryptedTransactionsSurviveReopenAndRefuseWrongKeyOrPartialUpdates() {
         val context = RuntimeEnvironment.getApplication()
         context.deleteDatabase("radiotech-operational-v1.db")

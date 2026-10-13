@@ -14,6 +14,8 @@ import 'services/session_service.dart';
 import 'services/session_route_guard.dart';
 import 'services/notification_route_handler.dart';
 import 'services/operator_presence_service.dart';
+import 'services/sync_lifecycle_coordinator.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
@@ -89,6 +91,11 @@ class GestionaleRadioApp extends StatelessWidget {
           (user) => user?.uid,
         ),
         initialIdentity: FirebaseAuth.instance.currentUser?.uid,
+        scopes: SessionService.instance.scopeChanges,
+        onScopeChanged: () {
+          SessionService.instance.invalidateScope();
+          NotificationService.instance.invalidateScope();
+        },
         child: const AuthGate(),
       ),
     );
@@ -140,17 +147,83 @@ class _AccessGate extends StatefulWidget {
 }
 
 class _AccessGateState extends State<_AccessGate> {
-  late Future<AccessState> _access = SessionService.instance.resolveAccess();
+  late Future<AccessState> _access = _validateAccess();
   bool _rechecking = false;
   AccessState _last = AccessState.pending;
+  late final SyncLifecycleCoordinator _sessionRecovery;
+  Timer? _sessionTimer;
+  StreamSubscription<String?>? _scopeSubscription;
+
+  Future<AccessState> _validateAccess({bool forceRefresh = false}) async {
+    final state = await SessionService.instance.resolveAccess(
+      forceRefresh: forceRefresh,
+    );
+    if (mounted) {
+      OperatorPresenceService.instance.setAccessAllowed(
+        state == AccessState.approved,
+      );
+      if ({
+        AccessState.expired,
+        AccessState.suspended,
+        AccessState.deviceRevoked,
+      }.contains(state)) {
+        unawaited(NotificationService.instance.clearDeviceToken());
+      }
+    }
+    return state;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _sessionRecovery = SyncLifecycleCoordinator(
+      networkChanges: Connectivity().onConnectivityChanged.map(
+        (types) => types.any((type) => type != ConnectivityResult.none),
+      ),
+      retry: (_) => _recheck(),
+    )..start(retryImmediately: false);
+    _scopeSubscription = SessionService.instance.scopeChanges
+        .skip(1)
+        .listen(
+          (_) {
+            _sessionRecovery.request(force: true);
+          },
+          onError: (Object _) {
+            /* Resume and network recovery recheck access. */
+          },
+        );
+    _sessionTimer = Timer.periodic(
+      const Duration(minutes: 5),
+      (_) => _sessionRecovery.request(force: true),
+    );
+  }
+
+  @override
+  void dispose() {
+    _sessionTimer?.cancel();
+    unawaited(_scopeSubscription?.cancel());
+    unawaited(_sessionRecovery.dispose());
+    super.dispose();
+  }
 
   Future<void> _recheck() async {
+    if (_rechecking || !mounted) return;
+    final previousScope =
+        '${SessionService.instance.tenantId}:${SessionService.instance.role}';
     setState(() {
       _rechecking = true;
-      _access = SessionService.instance.resolveAccess(forceRefresh: true);
+      _access = _validateAccess(forceRefresh: true);
     });
     try {
-      await _access;
+      final state = await _access;
+      if (!mounted) return;
+      final nextScope =
+          '${SessionService.instance.tenantId}:${SessionService.instance.role}';
+      if (!SessionService.allowsLocalAccess(state) ||
+          previousScope != nextScope) {
+        AppNavigation.clearRequests();
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
     } finally {
       if (mounted) setState(() => _rechecking = false);
     }
@@ -171,13 +244,33 @@ class _AccessGateState extends State<_AccessGate> {
         final state = done ? (snapshot.data ?? AccessState.error) : _last;
         if (done) _last = state;
 
-        if (state == AccessState.approved) {
+        if (SessionService.allowsLocalAccess(state)) {
           return NotificationRouteHandler(
-            child:
-                SessionService.instance.isCustomer ||
-                    SessionService.instance.managementOnly
-                ? const ProSuiteScreen()
-                : const HomeScreen(),
+            child: Column(
+              children: [
+                if (state == AccessState.approvedOffline)
+                  Material(
+                    color: Color(0xFF332B1D),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      child: Text(
+                        'Accesso offline temporaneo: conserva le bozze. La centrale confermerà gli invii al ritorno della rete.',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                Expanded(
+                  child:
+                      SessionService.instance.isCustomer ||
+                          SessionService.instance.managementOnly
+                      ? const ProSuiteScreen()
+                      : const HomeScreen(),
+                ),
+              ],
+            ),
           );
         }
 

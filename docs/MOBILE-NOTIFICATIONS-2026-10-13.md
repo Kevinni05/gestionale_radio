@@ -2,7 +2,7 @@
 
 Data: 13 ottobre 2026. Repository: `Kevinni05/gestionale_radio`.
 Baseline: `93e89d7` (presenza RTDB), successiva alla baseline storica del piano.
-Versione di base: `1.5.3+11002`; nessun rollout avviato da questo intervento.
+Versione del sorgente di base: `1.5.4+11003`; candidata `1.5.5+11004`. La versione installata sul Samsung era `1.5.3+11002`. Nessuna installazione commerciale è stata sostituita in questa iterazione.
 
 ## Difetti verificati nel codice
 
@@ -53,7 +53,7 @@ nella baseline.
 - `flutter build apk --debug --no-pub --target-platform android-arm64 --dart-define-from-file=config/render.json`.
 
 Risultato locale: formattazione verificata senza modifiche, analisi senza
-segnalazioni e 163 test superati. La build debug arm64 è compilata localmente.
+segnalazioni e 180 test Flutter superati nella candidata. Il test operativo nativo è riuscito anche sul Samsung QA e include la chiave del proprietario FCM, prima erroneamente esclusa dalla whitelist Android. La build debug arm64 è compilata localmente.
 
 Le regressioni coprono errore FCM iniziale, cold start, inbox generale, apertura
 incarico, aggiornamento e deduplicazione, errore del banner, destinatario/azienda
@@ -69,7 +69,7 @@ installata sopra quella versione e non sono state inviate notifiche di prova
 agli operatori di produzione.
 
 Per chiudere T15/T16 occorre distribuire una build candidata firmata con codice
-versione crescente e usare due dispositivi/account autorizzati:
+versione crescente e usare il Samsung e un emulatore Android con account autorizzati, secondo la disponibilità confermata da Kevin. L’emulatore non certifica FCM/GPS/camera di un secondo telefono fisico:
 
 1. Dashboard distribuita: notifica generale a un destinatario, poi a più
    destinatari; assegnazione di un incarico.
@@ -92,3 +92,13 @@ dei messaggi dati riguarda il foreground.
 Accesso persistente, revoca, restore, report/stock e tutte le altre voci del
 piano mantengono i rispettivi gate: questo intervento non certifica l'intera
 release Enterprise.
+
+## Consolidamento del piano 2.1
+
+Sessione verificata sul server su avvio/resume/rete e ogni cinque minuti in foreground; fallback locale cifrato massimo otto ore, senza permettere chiamate server revocate. Schermate private chiuse al cambio UID, tenant o ruolo. Il proprietario FCM persistente include UID e tenant; rotazione e cleanup impediscono l’associazione tardiva al vecchio contesto. Bozze: salvataggio prima del back, errori espliciti e blocco dell’editing fino a restore completato. Presenza: foreground/background, heartbeat RTDB 30 s e connessioni indipendenti; nessun GPS continuo. Check-in: preview distanza e accuratezza, annullamento prima delle transizioni, impostazioni quando il permesso è negato.
+
+Il backend distribuito era privo del permesso FCM e dell’URL RTDB pubblico. Correzione mirata applicata alle risorse esistenti, revisione pronta `radiotech-web-00004-5sv`; il nuovo codice web/backend resta una candidata distinta. L’invio generale candidato valida tutti i destinatari prima della transazione, conserva un ID tra retry e mostra esiti parziali/errori reali. Il payload lock screen candidato è generico e usa un tag Android stabile.
+
+Test FCM fisico preparato in `integration_test/physical_push_test.dart`, solo sull’installazione `.qa` e con credenziali sintetiche fuori da Git. Verifica API di registrazione, ricezione provider→foreground e ricevuta locale cifrata; non sostituisce T15/T16 dalla dashboard. Al tentativo il Samsung risultava scollegato; attendere il collegamento prima di dichiarare la prova riuscita.
+
+Registro completo: [piano e gate](https://github.com/Kevinni05/radiotechwebapp/blob/improve/enterprise-plan-20261013/docs/ENTERPRISE-PLAN-2026-10-13.md), con verbale di consegna compilabile. Pilota, supporto/owner e collaudi sul campo restano esplicitamente aperti.

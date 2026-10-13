@@ -63,6 +63,7 @@ class NotificationService {
   final _subscriptions = <StreamSubscription<dynamic>>[];
   SyncLifecycleCoordinator? _recovery;
   Future<void>? _tokenSync;
+  Future<void>? _deviceCleanup;
   bool _needsRotation = false;
   static const _deviceOwnerKey = 'notification_device_owner';
   final _store = LocalOperationalStore.instance;
@@ -189,14 +190,22 @@ class NotificationService {
       final revision = _revision;
       final user = _auth.currentUser;
       if (user == null) return;
+      final identity = await user.getIdTokenResult();
+      final tenant = identity.claims?['tenantId']?.toString() ?? '';
+      if (tenant.isEmpty ||
+          !SessionService.isAppRole(identity.claims?['role'])) {
+        return;
+      }
+      final expectedOwner = jsonEncode([user.uid, tenant]);
       final owner = await _store.read(_deviceOwnerKey);
-      if (owner != null && owner != user.uid) _needsRotation = true;
+      if (owner != null && owner != expectedOwner) _needsRotation = true;
+      if (_revision != revision || _auth.currentUser?.uid != user.uid) return;
       if (_needsRotation) await _clearInstallation();
       final token = await _messaging.getToken().timeout(
         const Duration(seconds: 20),
       );
       if (token != null && _isCurrent(user, revision)) {
-        await _registerTokenWithBackend(token, user, revision);
+        await _registerTokenWithBackend(token, user, revision, tenant);
       }
     });
     _tokenSync = future;
@@ -273,11 +282,13 @@ class NotificationService {
     String token,
     User user,
     int revision,
+    String tenant,
   ) async {
     final identity = await user.getIdTokenResult().timeout(
       const Duration(seconds: 20),
     );
     if (!_isCurrent(user, revision) ||
+        identity.claims?['tenantId']?.toString() != tenant ||
         !SessionService.isAppRole(identity.claims?['role']) ||
         (identity.claims?['tenantId']?.toString().trim() ?? '').isEmpty) {
       return;
@@ -304,8 +315,19 @@ class NotificationService {
       return;
     }
 
+    if (!_isCurrent(user, revision)) return;
     debugPrint('FCM token registrato sul backend.');
-    await _store.write(_deviceOwnerKey, user.uid);
+    await _store.write(_deviceOwnerKey, jsonEncode([user.uid, tenant]));
+  }
+
+  /// Immediately stop accepting the previous tenant's payloads while revalidating.
+  void invalidateScope() {
+    _revision++;
+    _needsRotation = true;
+    AppNavigation.clearRequests();
+    unawaited(_attempt('Pulizia avvisi', _localNotifications.cancelAll));
+    unawaited(_attempt('Pulizia badge', PersonalBadgeCache.clearOwn));
+    unawaited(syncTokenWithBackend());
   }
 
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
@@ -339,7 +361,9 @@ class NotificationService {
         throw StateError('Identità cambiata.');
       }
       await _localNotifications.show(
-        id: notificationDisplayId(message.data['notificationId'] as String),
+        id: Platform.isAndroid
+            ? 0
+            : notificationDisplayId(message.data['notificationId'] as String),
         title:
             notification?.title ??
             message.data['title']?.toString() ??
@@ -356,6 +380,7 @@ class NotificationService {
             importance: Importance.max,
             priority: Priority.high,
             icon: '@mipmap/ic_launcher',
+            tag: message.data['notificationId'] as String,
           ),
           iOS: const DarwinNotificationDetails(),
         ),
@@ -424,7 +449,17 @@ class NotificationService {
     return hash;
   }
 
-  Future<void> clearDeviceToken() async {
+  Future<void> clearDeviceToken() {
+    if (_deviceCleanup != null) return _deviceCleanup!;
+    if (_loggingOut) return Future.value();
+    final work = _clearDeviceToken();
+    _deviceCleanup = work;
+    return work.whenComplete(() {
+      if (identical(_deviceCleanup, work)) _deviceCleanup = null;
+    });
+  }
+
+  Future<void> _clearDeviceToken() async {
     _loggingOut = true;
     _departingUid = _auth.currentUser?.uid;
     _revision++;

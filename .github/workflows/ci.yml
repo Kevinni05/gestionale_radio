@@ -50,7 +50,7 @@ jobs:
 
   android-qa:
     name: Android QA compile
-    timeout-minutes: 20
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -78,7 +78,18 @@ jobs:
 
       - name: Native transactional storage and cryptography tests
         # Native cryptography/SQLite tests are separate from the Dart boundary mocks.
-        run: bash android/gradlew -p android :app:testDebugUnitTest --no-daemon
+        run: bash android/gradlew -p android :app:testDebugUnitTest -Ptarget-platform=android-arm64 --no-daemon
+
+      - name: Store native test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: radiotech-native-test-results
+          path: |
+            build/app/reports/tests/testDebugUnitTest
+            build/app/test-results/testDebugUnitTest
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Store QA artifact
         uses: actions/upload-artifact@v4

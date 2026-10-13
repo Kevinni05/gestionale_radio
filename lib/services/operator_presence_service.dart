@@ -8,11 +8,24 @@ import 'package:http/http.dart' as http;
 
 import 'api_service.dart';
 
-/// Foreground presence is independent of Firebase Auth and FCM registration.
+/// Lifecycle/connection evidence is independent of FCM and availability.
 /// One connection per process prevents one phone from hiding another phone.
 class OperatorPresenceService with WidgetsBindingObserver {
-  OperatorPresenceService._();
-  static final instance = OperatorPresenceService._();
+  OperatorPresenceService({
+    FirebaseAuth? auth,
+    http.Client? client,
+    FirebaseDatabase Function(String)? databaseFactory,
+  }) : _auth = auth ?? FirebaseAuth.instance,
+       _client = client ?? http.Client() {
+    _databaseFactory =
+        databaseFactory ??
+        ((url) =>
+            FirebaseDatabase.instanceFor(app: _auth.app, databaseURL: url));
+  }
+  static final instance = OperatorPresenceService();
+  final FirebaseAuth _auth;
+  final http.Client _client;
+  late final FirebaseDatabase Function(String) _databaseFactory;
   static const _roles = {
     'OPERATOR',
     'OPERATORE',
@@ -31,6 +44,11 @@ class OperatorPresenceService with WidgetsBindingObserver {
   StreamSubscription<DatabaseEvent>? _connected;
   bool _initialized = false;
   bool _foreground = false;
+  bool _accessAllowed = false;
+  bool _isConnected = false;
+  bool _cleanupRegistered = false;
+  Timer? _heartbeat;
+  StreamSubscription<User?>? _identityChanges;
   int _revision = 0;
   Future<void> _work = Future.value();
 
@@ -38,10 +56,25 @@ class OperatorPresenceService with WidgetsBindingObserver {
     if (_initialized) return;
     _initialized = true;
     _foreground =
+        WidgetsBinding.instance.lifecycleState == null ||
         WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
     WidgetsBinding.instance.addObserver(this);
-    FirebaseAuth.instance.idTokenChanges().listen((_) => _schedule());
+    _identityChanges = _auth.idTokenChanges().listen((_) => _schedule());
     _schedule();
+    _heartbeat = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (_accessAllowed && _database != null) _schedule();
+    });
+  }
+
+  void setAccessAllowed(bool allowed) {
+    if (_accessAllowed == allowed) return;
+    _accessAllowed = allowed;
+    _revision++;
+    if (allowed) {
+      _schedule();
+    } else {
+      unawaited(stop());
+    }
   }
 
   @override
@@ -50,11 +83,16 @@ class OperatorPresenceService with WidgetsBindingObserver {
     // the app is no longer visible. Resume reconnects without another login.
     if (state == AppLifecycleState.resumed) {
       _foreground = true;
+      _revision++;
       _schedule();
     } else if (state == AppLifecycleState.hidden ||
-        state == AppLifecycleState.paused ||
-        state == AppLifecycleState.detached) {
+        state == AppLifecycleState.paused) {
       _foreground = false;
+      _revision++;
+      _schedule();
+    } else if (state == AppLifecycleState.detached) {
+      _accessAllowed = false;
+      _heartbeat?.cancel();
       unawaited(stop());
     }
   }
@@ -66,15 +104,18 @@ class OperatorPresenceService with WidgetsBindingObserver {
   }
 
   Future<void> stop() async {
+    _accessAllowed = false;
     _revision++;
+    _isConnected = false;
+    _cleanupRegistered = false;
     // Closing just this database connection executes the server-side
     // onDisconnect operation, even if an explicit offline write cannot finish.
     await _database?.goOffline();
   }
 
   Future<void> _refresh() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (!_foreground || user == null) {
+    final user = _auth.currentUser;
+    if (!_accessAllowed || user == null) {
       await stop();
       return;
     }
@@ -86,14 +127,14 @@ class OperatorPresenceService with WidgetsBindingObserver {
       await stop();
       return;
     }
-    if (!_foreground ||
-        FirebaseAuth.instance.currentUser?.uid != user.uid ||
+    if (!_accessAllowed ||
+        _auth.currentUser?.uid != user.uid ||
         revision != _revision) {
       return;
     }
 
     if (_database == null) {
-      final response = await http
+      final response = await _client
           .get(Uri.parse('${ApiService.baseUrl}/api/v1/auth/public-config'))
           .timeout(const Duration(seconds: 10));
       if (response.statusCode != 200) return;
@@ -109,16 +150,15 @@ class OperatorPresenceService with WidgetsBindingObserver {
           uri.hasFragment) {
         return;
       }
-      if (!_foreground || revision != _revision) return;
-      _database = FirebaseDatabase.instanceFor(
-        app: FirebaseAuth.instance.app,
-        databaseURL: url,
-      );
+      if (!_accessAllowed || revision != _revision) return;
+      _database = _databaseFactory(url);
       await _database!.goOffline();
     }
 
     final scope = '$tenant/${user.uid}';
     if (_scope != scope) {
+      _cleanupRegistered = false;
+      _isConnected = false;
       await _database!.goOffline();
       await _connected?.cancel();
       _scope = scope;
@@ -129,7 +169,9 @@ class OperatorPresenceService with WidgetsBindingObserver {
           .onValue
           .listen(
             (event) {
-              if (event.snapshot.value == true && _foreground) {
+              _isConnected = event.snapshot.value == true;
+              if (!_isConnected) _cleanupRegistered = false;
+              if (_isConnected && _accessAllowed) {
                 final activeScope = _scope;
                 _work = _work.then((_) => _publish(activeScope)).catchError((
                   Object error,
@@ -147,10 +189,11 @@ class OperatorPresenceService with WidgetsBindingObserver {
             },
           );
     }
-    if (_foreground &&
-        FirebaseAuth.instance.currentUser?.uid == user.uid &&
+    if (_accessAllowed &&
+        _auth.currentUser?.uid == user.uid &&
         revision == _revision) {
       await _database!.goOnline();
+      if (_isConnected) await _publish(_scope);
     }
   }
 
@@ -158,7 +201,7 @@ class OperatorPresenceService with WidgetsBindingObserver {
     final account = _account;
     final connectionId = _connectionId;
     final revision = _revision;
-    if (!_foreground ||
+    if (!_accessAllowed ||
         scope != _scope ||
         account == null ||
         connectionId == null) {
@@ -166,22 +209,44 @@ class OperatorPresenceService with WidgetsBindingObserver {
     }
     // Register cleanup BEFORE announcing online. This also updates lastSeen
     // using the server clock and preserves other devices' connection entries.
-    await account
-        .onDisconnect()
-        .update({
-          'connections/$connectionId': null,
-          'lastSeen': ServerValue.timestamp,
-        })
-        .timeout(const Duration(seconds: 5));
-    if (!_foreground ||
+    if (!_cleanupRegistered) {
+      await account
+          .onDisconnect()
+          .update({
+            'connections/$connectionId': null,
+            'lastSeen': ServerValue.timestamp,
+          })
+          .timeout(const Duration(seconds: 5));
+      _cleanupRegistered = true;
+    }
+    if (!_accessAllowed ||
         scope != _scope ||
         revision != _revision ||
-        FirebaseAuth.instance.currentUser?.uid != scope?.split('/').last) {
+        _auth.currentUser?.uid != scope?.split('/').last) {
       return;
     }
     await account
         .child('connections/$connectionId')
-        .set(true)
+        .set({
+          'state': _foreground ? 'foreground' : 'background',
+          'updatedAt': ServerValue.timestamp,
+        })
         .timeout(const Duration(seconds: 5));
+  }
+
+  Future<void> dispose() async {
+    _heartbeat?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    await _identityChanges?.cancel();
+    await _connected?.cancel();
+    await stop();
+  }
+
+  Future<void> settle() async {
+    Future<void> pending;
+    do {
+      pending = _work;
+      await pending;
+    } while (!identical(pending, _work));
   }
 }

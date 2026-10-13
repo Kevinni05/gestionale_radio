@@ -344,6 +344,25 @@ void main() {
   );
 
   testWidgets(
+    'same account in another tenant rotates the installation and rejects old payloads',
+    (tester) async {
+      await service.initialize();
+      requests.clear();
+      auth.currentUser = TestUser('user-a', tenant: 'company-b');
+      service.invalidateScope();
+      await tester.pumpAndSettle();
+      expect(messaging.deletes, 1);
+      expect(requests, hasLength(1));
+      opened.add(notice('previous-tenant'));
+      await tester.pumpAndSettle();
+      expect(AppNavigation.requestedNotification.value, isNull);
+      opened.add(notice('new-tenant', tenant: 'company-b'));
+      await tester.pumpAndSettle();
+      expect(AppNavigation.requestedNotification.value, 'new-tenant');
+    },
+  );
+
+  testWidgets(
     'failed rotation keeps the next account unassociated until recovery succeeds',
     (tester) async {
       await service.initialize();
