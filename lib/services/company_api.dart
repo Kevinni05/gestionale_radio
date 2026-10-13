@@ -82,6 +82,13 @@ class CompanyApi {
     final revision = AuthService.instance.sessionRevision;
     final tenant = SessionService.instance.tenantId;
     final token = await AuthService.instance.requireIdToken();
+    if (uid != AuthService.instance.currentUid ||
+        revision != AuthService.instance.sessionRevision ||
+        tenant != SessionService.instance.tenantId) {
+      throw const CompanyApiException(
+        'Sessione cambiata. Apri nuovamente la sezione.',
+      );
+    }
     final headers = {
       'Authorization': 'Bearer $token',
       'Content-Type': 'application/json',

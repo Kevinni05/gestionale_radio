@@ -199,6 +199,14 @@ class _TasksScreenState extends State<TasksScreen> with WidgetsBindingObserver {
       ),
     );
     if (!mounted || !current()) return null;
+    if (!position.latitude.isFinite ||
+        !position.longitude.isFinite ||
+        !position.accuracy.isFinite ||
+        position.accuracy < 0) {
+      throw StateError(
+        'Posizione GPS non attendibile. Spostati all’aperto e riprova.',
+      );
+    }
     final asset = task.antennaId == null
         ? <String, dynamic>{}
         : await ApiService.instance.getAntennaDetails(task.antennaId!);
