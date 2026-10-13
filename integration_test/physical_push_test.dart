@@ -49,6 +49,21 @@ void main() {
         );
         await ApiService.initializeEndpoint();
         await NotificationService.instance.initialize();
+        final expectedOwner = jsonEncode([uid, tenant]);
+        String? registeredOwner;
+        for (var attempt = 0; attempt < 4; attempt++) {
+          await NotificationService.instance.syncTokenWithBackend();
+          registeredOwner = await LocalOperationalStore.instance.read(
+            'notification_device_owner',
+          );
+          if (registeredOwner == expectedOwner) break;
+          await Future<void>.delayed(const Duration(seconds: 1));
+        }
+        expect(
+          registeredOwner,
+          expectedOwner,
+          reason: 'The receiver must confirm API registration before sending.',
+        );
         final token = await FirebaseMessaging.instance.getToken();
         expect(token, isNotEmpty);
         await evidence.writeAsString(
