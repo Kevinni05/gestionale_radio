@@ -26,6 +26,7 @@ class _SessionRouteGuardState extends State<SessionRouteGuard> {
   late final StreamSubscription<String?> _subscription;
   String? _identity;
   String? _scope;
+  int _scopeRevision = 0;
   StreamSubscription<String?>? _scopeSubscription;
 
   @override
@@ -36,6 +37,7 @@ class _SessionRouteGuardState extends State<SessionRouteGuard> {
       if (identity == _identity) return;
       _identity = identity;
       _scope = null;
+      setState(() => _scopeRevision++);
       AppNavigation.clearRequests();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
@@ -48,6 +50,7 @@ class _SessionRouteGuardState extends State<SessionRouteGuard> {
         _scope = scope;
         if (previous == null || scope == previous) return;
         widget.onScopeChanged?.call();
+        setState(() => _scopeRevision++);
         AppNavigation.clearRequests();
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
@@ -68,5 +71,6 @@ class _SessionRouteGuardState extends State<SessionRouteGuard> {
   }
 
   @override
-  Widget build(BuildContext context) => widget.child;
+  Widget build(BuildContext context) =>
+      KeyedSubtree(key: ValueKey(_scopeRevision), child: widget.child);
 }

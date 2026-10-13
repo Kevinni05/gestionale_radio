@@ -93,6 +93,7 @@ class GestionaleRadioApp extends StatelessWidget {
         initialIdentity: FirebaseAuth.instance.currentUser?.uid,
         scopes: SessionService.instance.scopeChanges,
         onScopeChanged: () {
+          OperatorPresenceService.instance.setAccessAllowed(false);
           SessionService.instance.invalidateScope();
           NotificationService.instance.invalidateScope();
         },
