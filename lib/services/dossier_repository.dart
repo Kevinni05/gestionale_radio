@@ -90,8 +90,9 @@ class DossierRepository {
         fileIds.add((row as Map)['fileId'] as String);
       }
     }
-    if (fileIds.length > 50)
+    if (fileIds.length > 50) {
       throw StateError('Massimo 50 allegati per il pacchetto offline.');
+    }
     final files = <String, dynamic>{};
     var total = 0;
     for (final fileId in fileIds) {
@@ -100,10 +101,11 @@ class DossierRepository {
       );
       _check(owner);
       total += (file['base64'] as String).length;
-      if (total > maxPackBytes - 1000000)
+      if (total > maxPackBytes - 1000000) {
         throw StateError(
           'Pacchetto troppo grande: riduci gli allegati o consulta online (limite 28 MB cifrati).',
         );
+      }
       files[fileId] = file;
     }
     _check(owner);
@@ -117,8 +119,9 @@ class DossierRepository {
       'data': data,
       'files': files,
     });
-    if (utf8.encode(pack).length > maxPackBytes)
+    if (utf8.encode(pack).length > maxPackBytes) {
       throw StateError('Pacchetto troppo grande per il download offline.');
+    }
     final key = 'dossier_${owner}_$id';
     await _write(key, pack);
     if (_owner() != owner) {
@@ -134,8 +137,9 @@ class DossierRepository {
   ) async {
     final owner = _owner();
     final cached = dossier['_offlineFiles'];
-    if (cached is Map && cached[fileId] is Map)
+    if (cached is Map && cached[fileId] is Map) {
       return Map<String, dynamic>.from(cached[fileId] as Map);
+    }
     final file = Map<String, dynamic>.from(
       await _request('${path(id)}/files/$fileId') as Map,
     );
@@ -167,8 +171,9 @@ class DossierRepository {
     Map<String, dynamic>? body,
   }) => _request(path, method: method, body: body);
   Future<String> upload(String name, Uint8List bytes) async {
-    if (bytes.isEmpty || bytes.length > 10000000)
+    if (bytes.isEmpty || bytes.length > 10000000) {
       throw StateError('La fotografia deve essere entro 10 MB.');
+    }
     final owner = _owner(), revision = AuthService.instance.sessionRevision;
     final token = await AuthService.instance.requireIdToken();
     final url = Uri.parse(ApiService.apiV1Url('/files')).replace(
@@ -183,10 +188,12 @@ class DossierRepository {
       body: bytes,
     );
     _check(owner);
-    if (revision != AuthService.instance.sessionRevision)
+    if (revision != AuthService.instance.sessionRevision) {
       throw StateError('Sessione cambiata.');
-    if (response.statusCode < 200 || response.statusCode >= 300)
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
       throw StateError('Caricamento non riuscito.');
+    }
     final result = jsonDecode(response.body) as Map;
     return (result['reference'] as String).replaceFirst('radiotech-file:', '');
   }

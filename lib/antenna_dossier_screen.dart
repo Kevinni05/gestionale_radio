@@ -102,8 +102,9 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
           !_offline &&
           !_busy &&
           !_loading &&
-          _data != null)
-        _loadSessions();
+          _data != null) {
+        _run(_loadSessions);
+      }
     });
   }
 
@@ -117,8 +118,9 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && mounted && !_identityValid())
+    if (state == AppLifecycleState.resumed && mounted && !_identityValid()) {
       setState(() => _data = null);
+    }
   }
 
   bool _identityValid() {
@@ -140,10 +142,11 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
       final data = offline
           ? await _repo.offline(widget.antennaId)
           : await _repo.load(widget.antennaId);
-      if (data == null)
+      if (data == null) {
         throw StateError(
           'Nessuna copia offline valida. Scarica il fascicolo quando sei online.',
         );
+      }
       if (!mounted || generation != _generation || !_identityValid()) return;
       setState(() {
         _data = data;
@@ -157,11 +160,13 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
       });
       if (_tab == 'sessions' && !offline) await _loadSessions();
     } catch (e) {
-      if (mounted && generation == _generation)
+      if (mounted && generation == _generation) {
         setState(() => _error = e.toString());
+      }
     } finally {
-      if (mounted && generation == _generation)
+      if (mounted && generation == _generation) {
         setState(() => _loading = false);
+      }
     }
   }
 
@@ -171,10 +176,11 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
     try {
       await action();
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -195,7 +201,7 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
-              if (action != null) action,
+              ?action,
             ],
           ),
           const SizedBox(height: 14),
@@ -214,7 +220,23 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _access[e.key] ?? e.key,
+                  _access[e.key] ??
+                      const {
+                        'model': 'Modello',
+                        'status': 'Stato',
+                        'code': 'Codice',
+                        'serial': 'Matricola',
+                        'manufacturer': 'Produttore',
+                        'site': 'Sede',
+                        'specs': 'Dati tecnici',
+                        'metric': 'Parametro',
+                        'unit': 'Unità',
+                        'value': 'Valore',
+                        'notes': 'Note',
+                        'recordedAt': 'Registrato il',
+                        'actor': 'Tecnico',
+                      }[e.key] ??
+                      e.key,
                   style: Theme.of(context).textTheme.labelSmall,
                 ),
                 const SizedBox(height: 4),
@@ -266,7 +288,7 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
                 ? null
                 : () => _run(() async {
                     await _repo.download(widget.antennaId);
-                    if (mounted)
+                    if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text(
@@ -274,6 +296,7 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
                           ),
                         ),
                       );
+                    }
                   }),
             icon: const Icon(Icons.download_for_offline_outlined),
           ),
@@ -350,8 +373,9 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
                               selected: _tab == e.key,
                               onSelected: (_) {
                                 setState(() => _tab = e.key);
-                                if (e.key == 'sessions' && !_offline)
+                                if (e.key == 'sessions' && !_offline) {
                                   _run(_loadSessions);
+                                }
                               },
                             ),
                           ),
@@ -414,7 +438,7 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
         ];
       case 'configuration':
         final configs = _rows(d, 'configuration');
-        if (configs.isEmpty)
+        if (configs.isEmpty) {
           return [
             _card(
               'Configurazioni',
@@ -422,6 +446,7 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
               action: manage ? _button('Aggiungi', _configuration) : null,
             ),
           ];
+        }
         final before = _map(
               configs[_before.clamp(0, configs.length - 1).toInt()]['values'],
             ),
@@ -559,7 +584,10 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
           ),
         ];
       case 'dependencies':
-        final edges = _rows(d, 'dependencies');
+        final edges = _rows(
+          d,
+          'dependencies',
+        ).where((r) => r['archived'] != true).toList();
         return [
           _card(
             'Dipendenze dirette',
@@ -810,7 +838,24 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
                               ? 3
                               : 1,
                           maxLength: 2000,
-                          validator: (v) => v == null || v.trim().isEmpty
+                          keyboardType:
+                              ['low', 'high'].contains(e.key) ||
+                                  (e.key == 'value' &&
+                                      fields.containsKey('metric'))
+                              ? const TextInputType.numberWithOptions(
+                                  decimal: true,
+                                  signed: true,
+                                )
+                              : TextInputType.text,
+                          validator: (v) =>
+                              !{
+                                    'notes',
+                                    'unit',
+                                    'low',
+                                    'high',
+                                    ..._access.keys,
+                                  }.contains(e.key) &&
+                                  (v == null || v.trim().isEmpty)
                               ? 'Campo obbligatorio'
                               : null,
                         ),
@@ -840,15 +885,17 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
                       if (!key.currentState!.validate()) return;
                       setLocal(() => saving = true);
                       try {
-                        if (!_identityValid())
+                        if (!_identityValid()) {
                           throw StateError('Sessione cambiata.');
+                        }
                         await save(
                           controllers.map((k, c) => MapEntry(k, c.text.trim())),
                         );
                         if (context.mounted) Navigator.pop(context);
                       } catch (e) {
-                        if (context.mounted)
+                        if (context.mounted) {
                           setLocal(() => error = e.toString());
+                        }
                       } finally {
                         if (context.mounted) setLocal(() => saving = false);
                       }
@@ -884,8 +931,9 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
     final values = <String, String>{};
     for (final line in value.split('\n').where((l) => l.trim().isNotEmpty)) {
       final pos = line.indexOf('=');
-      if (pos < 1)
+      if (pos < 1) {
         throw StateError('Usa nome = valore, una riga per parametro.');
+      }
       values[line.substring(0, pos).trim()] = line.substring(pos + 1).trim();
     }
     return values;
@@ -935,40 +983,72 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
         'metric': 'Parametro',
         'unit': 'Unità',
         'value': 'Valore',
-        'low': 'Soglia minima (oppure -)',
-        'high': 'Soglia massima (oppure -)',
-        'notes': 'Note (oppure -)',
+        'low': 'Soglia minima (facoltativa)',
+        'high': 'Soglia massima (facoltativa)',
+        'notes': 'Note (facoltative)',
       },
       (v) => _change('measurements', {
         'metric': v['metric'],
         'unit': v['unit'],
         'value': double.parse(v['value']!.replaceAll(',', '.')),
-        'low': v['low'] == '-'
+        'low': v['low']!.isEmpty
             ? null
             : double.parse(v['low']!.replaceAll(',', '.')),
-        'high': v['high'] == '-'
+        'high': v['high']!.isEmpty
             ? null
             : double.parse(v['high']!.replaceAll(',', '.')),
-        'notes': v['notes'] == '-' ? '' : v['notes'],
+        'notes': v['notes'],
         'measuredAt': at.toIso8601String(),
       }),
-      initial: {'low': '-', 'high': '-', 'notes': '-'},
     );
   }
 
-  Future<void> _propose() => _form(
-    'Proponi correzione',
-    {
-      'target': 'Sezione: access oppure configuration',
-      'field': 'Nome campo',
-      'value': 'Valore corretto',
-      'reason': 'Motivazione',
-    },
-    (v) => _change('proposals', v),
-    initial: {'target': 'access'},
-    description:
-        'Campi accesso: ${_access.keys.join(', ')}. La proposta richiede approvazione.',
-  );
+  Future<void> _propose() async {
+    final config = _map(_rows(_data!, 'configuration').lastOrNull?['values']);
+    final selected = await showDialog<(String, String)>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Quale dato vuoi correggere?'),
+        content: SizedBox(
+          width: 500,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              const Text('Accesso al sito'),
+              ..._access.entries.map(
+                (e) => ListTile(
+                  title: Text(e.value),
+                  onTap: () => Navigator.pop(context, ('access', e.key)),
+                ),
+              ),
+              if (config.isNotEmpty) const Text('Configurazione'),
+              ...config.keys.map(
+                (k) => ListTile(
+                  title: Text(k),
+                  onTap: () => Navigator.pop(context, ('configuration', k)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected == null || !mounted) return;
+    final values = selected.$1 == 'access' ? _map(_data!['access']) : config;
+    await _form(
+      'Proponi correzione',
+      {'value': 'Valore corretto', 'reason': 'Motivazione'},
+      (v) => _change('proposals', {
+        'target': selected.$1,
+        'field': selected.$2,
+        ...v,
+      }),
+      initial: {'value': '${values[selected.$2] ?? ''}'},
+      description:
+          'La modifica sarà applicata dopo la verifica del responsabile.',
+    );
+  }
+
   Future<void> _issue() => _form('Segnala problema', {
     'title': 'Titolo',
     'notes': 'Descrizione',
@@ -1086,15 +1166,16 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
     if (!mounted || !_identityValid() || generation != _generation) return;
     setState(() {
       _sessions = list.map(_map).toList();
-      if (_session != null)
+      if (_session != null) {
         _session = _sessions
             .where((s) => s['id'] == _session!['id'])
             .firstOrNull;
+      }
     });
   }
 
   List<Widget> _sessionContent() {
-    if (_offline)
+    if (_offline) {
       return [
         _card(
           'Prove coordinate',
@@ -1103,6 +1184,7 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
           ),
         ),
       ];
+    }
     final s = _session;
     return [
       _card(
@@ -1458,12 +1540,14 @@ class _OfflineDossiersScreenState extends State<OfflineDossiersScreen> {
     body: FutureBuilder<List<Map<String, dynamic>>>(
       future: _packs,
       builder: (context, s) {
-        if (s.connectionState != ConnectionState.done)
+        if (s.connectionState != ConnectionState.done) {
           return const Center(child: CircularProgressIndicator());
-        if (s.hasError)
+        }
+        if (s.hasError) {
           return const Center(
             child: Text('Impossibile leggere i fascicoli di questo account.'),
           );
+        }
         final rows = s.data ?? [];
         return ListView(
           padding: const EdgeInsets.all(16),

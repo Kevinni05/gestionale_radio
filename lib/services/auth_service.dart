@@ -98,9 +98,13 @@ class AuthService {
     await NotificationService.instance.clearDeviceToken();
     try {
       await OfflineTaskPackStore.clearOwn();
-      await DossierRepository.clearOwn();
     } catch (_) {
       /* No approved operator session. */
+    }
+    try {
+      await DossierRepository.clearOwn();
+    } catch (_) {
+      // Copies remain scoped to their owner and expire independently.
     }
     await auth.signOut();
   }
