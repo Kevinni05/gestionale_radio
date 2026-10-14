@@ -141,6 +141,19 @@ void main() {
     },
   );
   test(
+    'the device revocation 401 contract is distinguished from token expiry',
+    () async {
+      expect(await session.resolveAccess(), AccessState.approved);
+      status = 401;
+      body = '{"message":"Dispositivo revocato: accedi nuovamente."}';
+      expect(await session.resolveAccess(), AccessState.deviceRevoked);
+      expect(session.tenantId, isNull);
+      status = 200;
+      user.error = FirebaseAuthException(code: 'network-request-failed');
+      expect(await session.resolveAccess(), AccessState.offline);
+    },
+  );
+  test(
     'explicit server denials erase the offline grant instead of permitting fallback',
     () async {
       expect(await session.resolveAccess(), AccessState.approved);

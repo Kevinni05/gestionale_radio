@@ -170,7 +170,6 @@ class SessionService {
       if (response.statusCode == 401 || response.statusCode == 403) {
         _clear();
         await _store.delete(_key(user.uid));
-        if (response.statusCode == 401) return AccessState.expired;
         String message = '';
         try {
           message =
@@ -179,8 +178,9 @@ class SessionService {
                   .toLowerCase() ??
               '';
         } catch (_) {}
-        return message.contains('dispositivo')
-            ? AccessState.deviceRevoked
+        if (message.contains('dispositivo')) return AccessState.deviceRevoked;
+        return response.statusCode == 401
+            ? AccessState.expired
             : AccessState.suspended;
       }
       if (response.statusCode >= 500 ||
