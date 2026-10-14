@@ -113,4 +113,3 @@ class AuthService {
     return auth.authStateChanges();
   }
 }
-

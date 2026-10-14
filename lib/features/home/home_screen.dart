@@ -903,9 +903,11 @@ class _HomeScreenState extends ConsumerState<_HomeFeature>
                 subtitle: 'Impianti, documenti e fotografie scaricati',
                 icon: Icons.folder_open_outlined,
                 accent: AppColors.blue,
-                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => const OfflineDossiersScreen(),
-                )),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const OfflineDossiersScreen(),
+                  ),
+                ),
               ),
             ),
             SizedBox(

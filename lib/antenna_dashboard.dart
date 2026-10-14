@@ -326,9 +326,11 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
               ),
               const SizedBox(height: 12),
               OutlinedButton.icon(
-                onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => AntennaDossierScreen(antennaId: antenna.id),
-                )),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => AntennaDossierScreen(antennaId: antenna.id),
+                  ),
+                ),
                 icon: const Icon(Icons.folder_open_outlined),
                 label: const Text('FASCICOLO IMPIANTO'),
               ),
@@ -651,4 +653,3 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
     );
   }
 }
-
