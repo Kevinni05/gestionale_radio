@@ -118,3 +118,12 @@ Revoca del solo dispositivo A dalla dashboard: Samsung bloccato con 401 e messag
 Kevin ha confermato il recupero della foto già scattata dalla bozza; ha scelto di non attivare TalkBack. La prova fisica TalkBack resta aperta. La candidata commerciale privata **1.5.5+11004**, sorgente f304070, è stata ricompilata con firma originale, 184 test e verifica APK/AAB. Digest e gate aggiornati nel [manifest web](https://github.com/Kevinni05/radiotechwebapp/blob/improve/enterprise-plan-20261013/docs/RELEASE-CANDIDATE-11004.json); nessuna pubblicazione commerciale o upgrade sopra un'installazione precedente è implicito.
 
 Registro completo: [piano e gate](https://github.com/Kevinni05/radiotechwebapp/blob/improve/enterprise-plan-20261013/docs/ENTERPRISE-PLAN-2026-10-13.md), con verbale di consegna compilabile. Pilota, supporto/owner e collaudi sul campo restano esplicitamente aperti.
+
+
+## Collaudo integrato del 14 ottobre e build 11005
+
+Sul Samsung è stato eseguito il flusso con incarico assegnato dalla dashboard, GPS confermato, checklist, foto, materiale e firma; bozza completa conservata dopo termine processo, invio ritentato con la stessa chiave dopo perdita della risposta già salvata, QR fisico corretto. Approvazione concorrente e rimozione report verificate dalla dashboard con un solo consumo di stock. [Verbale web completo](https://github.com/Kevinni05/radiotechwebapp/blob/improve/enterprise-plan-20261013/docs/COLLAUDO-COMPLETO-2026-10-14.md).
+
+APK commerciale 1.5.5 (11005), sorgente prodotto f304070, firmato con certificato originale e installato senza disinstallare la 11004: appId e inode cartelle CE/DE conservati. Tutti i 484 payload AAB verificati con il medesimo certificato. Contenuti bozze/coda commerciali non ispezionati. [Manifest corrente](https://github.com/Kevinni05/radiotechwebapp/blob/improve/enterprise-plan-20261013/docs/RELEASE-CANDIDATE-11005.json). [CI mobile 2a37cd3 riuscita](https://github.com/Kevinni05/gestionale_radio/actions/runs/38554095848), con analisi, prove Flutter/native ed emulatore; distribuzione Firebase saltata.
+
+Il nuovo collaudo dell'app normale ha rilevato un token per audience Firebase errata. Kevin ha autorizzato la correzione dell'autorità pubblica, ora alla revisione 00006 con firmatario nel progetto applicativo. Kevin conferma accesso alla home nell’app normale dopo la correzione. Backend pubblico ancora precedente: il flusso operativo completo candidato resta una prova QA distinta.
