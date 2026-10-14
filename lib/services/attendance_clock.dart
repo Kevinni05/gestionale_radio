@@ -155,6 +155,7 @@ class AttendanceClock {
     if (state == null) {
       throw StateError('Collegati prima di registrare una timbratura.');
     }
+    _checkScope(_scope!);
     if (queue.length >= 100) {
       throw StateError('Sincronizza le timbrature in attesa.');
     }
