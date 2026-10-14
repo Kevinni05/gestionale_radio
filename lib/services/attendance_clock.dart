@@ -111,6 +111,11 @@ class AttendanceClock {
   }
 
   Map<String, dynamic>? get displayState {
+    try {
+      if (_scope != scope) return null;
+    } catch (_) {
+      return null;
+    }
     if (state == null) return null;
     final result = Map<String, dynamic>.from(state!);
     for (final row in queue) {
