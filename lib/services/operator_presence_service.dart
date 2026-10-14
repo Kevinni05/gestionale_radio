@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 
@@ -80,7 +79,9 @@ class OperatorPresenceService with WidgetsBindingObserver {
       return;
     }
     if (!_foreground || FirebaseAuth.instance.currentUser?.uid != user.uid ||
-        revision != _revision) return;
+        revision != _revision) {
+      return;
+    }
 
     if (_database == null) {
       final response = await http.get(
@@ -93,7 +94,9 @@ class OperatorPresenceService with WidgetsBindingObserver {
       if (uri == null || uri.scheme != 'https' ||
           !(uri.host.endsWith('.firebasedatabase.app') ||
             uri.host.endsWith('.firebaseio.com')) ||
-          uri.userInfo.isNotEmpty || uri.hasQuery || uri.hasFragment) return;
+          uri.userInfo.isNotEmpty || uri.hasQuery || uri.hasFragment) {
+        return;
+      }
       if (!_foreground || revision != _revision) return;
       _database = FirebaseDatabase.instanceFor(
         app: FirebaseAuth.instance.app, databaseURL: url,
@@ -120,7 +123,9 @@ class OperatorPresenceService with WidgetsBindingObserver {
       });
     }
     if (_foreground && FirebaseAuth.instance.currentUser?.uid == user.uid &&
-        revision == _revision) await _database!.goOnline();
+        revision == _revision) {
+      await _database!.goOnline();
+    }
   }
 
   Future<void> _publish(String? scope) async {
@@ -135,8 +140,11 @@ class OperatorPresenceService with WidgetsBindingObserver {
       'lastSeen': ServerValue.timestamp,
     }).timeout(const Duration(seconds: 5));
     if (!_foreground || scope != _scope || revision != _revision ||
-        FirebaseAuth.instance.currentUser?.uid != scope?.split('/').last) return;
+        FirebaseAuth.instance.currentUser?.uid != scope?.split('/').last) {
+      return;
+    }
     await account.child('connections/$connectionId').set(true)
         .timeout(const Duration(seconds: 5));
   }
 }
+
