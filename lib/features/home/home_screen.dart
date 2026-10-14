@@ -1,3 +1,4 @@
+import '../../attendance_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'home_repository.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -890,6 +891,21 @@ class _HomeScreenState extends ConsumerState<_HomeFeature>
                 accent: AppColors.blue,
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(builder: (_) => const AiHubScreen()),
+                ),
+              ),
+            ),
+            SizedBox(
+              width: width,
+              child: _buildLargeAction(
+                context,
+                title: 'Presenze e turni',
+                subtitle: 'Badge, entrata / uscita e calendario personale',
+                icon: Icons.badge_outlined,
+                accent: AppColors.blue,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AttendanceScreen(),
+                  ),
                 ),
               ),
             ),

@@ -73,6 +73,33 @@ class CompanyApi {
     return bytes.takeBytes();
   }
 
+  Future<Uint8List> rosterPdf(String month) async {
+    if (!RegExp(r'^\d{4}-\d{2}$').hasMatch(month)) {
+      throw const CompanyApiException('Mese non valido.');
+    }
+    final uid = AuthService.instance.currentUid;
+    final revision = AuthService.instance.sessionRevision;
+    final tenant = SessionService.instance.tenantId;
+    final token = await AuthService.instance.requireIdToken();
+    final response = await _client.get(
+      Uri.parse(ApiService.apiV1Url('/workforce/me/roster/$month/pdf')),
+      headers: {'Authorization': 'Bearer $token', 'Accept': 'application/pdf'},
+    );
+    if (uid != AuthService.instance.currentUid ||
+        revision != AuthService.instance.sessionRevision ||
+        tenant != SessionService.instance.tenantId) {
+      throw const CompanyApiException('Sessione cambiata.');
+    }
+    if (response.statusCode != 200 ||
+        !(response.headers['content-type'] ?? '').contains('application/pdf') ||
+        response.bodyBytes.length > 10000000) {
+      throw const CompanyApiException(
+        'PDF non disponibile. Verifica che il calendario sia pubblicato.',
+      );
+    }
+    return response.bodyBytes;
+  }
+
   Future<dynamic> request(
     String path, {
     String method = 'GET',
