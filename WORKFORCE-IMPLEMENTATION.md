@@ -28,17 +28,17 @@ La pausa pianificata non ha un orario preciso: nei limiti settimanali dei turni 
 
 Dipendenze backend: OR-Tools 9.15.6755 e PDFBox 3.0.8; Java 21. Il bundle web si ricostruisce con `npm ci` e `npm run build:control-room`.
 
-Nuove collezioni: workforceClockRecoveries, workforceAttendance, workforceTimeEvents, workforceAttendanceAudit, workforcePlans, workforcePlanGuards, workforcePlanVersions, workforceRosterAudit. Accesso tramite API autenticata, scope tenant e UID verificati; nessuna scrittura diretta dai client. Le Firestore Rules esistenti negano l'accesso alle collezioni non esposte. Distribuire gli indici di firestore.indexes.json prima dei test integrati (`firebase deploy --only firestore:indexes` nel progetto corretto).
+Nuove collezioni: workforceClockRecoveries, workforceAttendance, workforceTimeEvents, workforceAttendanceAudit, workforcePlans, workforcePlanGuards, workforcePlanVersions, workforceRosterAudit. Accesso tramite API autenticata, scope tenant e UID verificati; nessuna scrittura diretta dai client. Le Firestore Rules esistenti negano l'accesso alle collezioni non esposte. Preparare gli indici prima dei test integrati con `python scripts/prepare-workforce-indexes.py --project gestionale-radio --apply` dal repository web. Lo script usa la sessione gcloud del PC, crea solo i quattro indici del modulo mancanti e attende lo stato READY; non modifica documenti, regole o altri indici. Senza `--apply` esegue solo il controllo. Non usa il progetto demo della `.firebaserc`.
 
 Test aggiunti: RosterSolverTest, AttendanceReconciliationTest, AttendanceLedgerEmulatorTest e workforce-module.spec.js. Suite mobile: attendance_clock_test.dart. Il protocollo operativo e il collaudo Samsung sono anche nel repository mobile.
 
 ## Passaggio a VS Code
 
-Usare il branch `feat/workforce-attendance-planning` in entrambi i repository. Non fare reset di modifiche locali: eseguire fetch e aprire un worktree separato se necessario. Prima del merge verificare le due CI e distribuire gli indici; testare poi contro backend e app compilati da questi branch.
+Usare il branch `feat/workforce-attendance-planning` in entrambi i repository. Non fare reset di modifiche locali: eseguire fetch e aprire un worktree separato se necessario. Le CI funzionali web/backend e mobile sono passate, inclusi i test Android nativi e su emulatore. Prima del rilascio preparare gli indici e completare il collaudo reale contro backend e app compilati da questi branch. La CI verifica anche lo script indici con API simulate; questo non certifica il deployment sul progetto reale.
 
 ## Collaudo sul Samsung
 
-1. Avviare il backend del branch con Java 21 e credenziali Firebase locali già configurate. Per USB usare `adb reverse tcp:8080 tcp:8080`, poi `flutter run --dart-define=API_BASE_URL=http://127.0.0.1:8080` sulla build debug; verificare le impostazioni Android HTTP già previste dal progetto.
+1. Usare un backend di collaudo del branch con Java 21 e identità runtime keyless. Il backend rifiuta chiavi private di service account e credenziali utente dirette per progetti reali: non usare il vecchio `start-local.ps1` che richiede una chiave privata. In alternativa locale, configurare prima ADC tramite impersonazione di un’identità runtime autorizzata, rispettando i permessi esistenti. Per USB usare `adb reverse tcp:8080 tcp:8080`, poi `flutter run --dart-define=API_BASE_URL=http://127.0.0.1:8080` sulla build debug; verificare le impostazioni Android HTTP già previste dal progetto. Con backend remoto usare invece il suo URL HTTPS in `API_BASE_URL`; il backend pubblico attuale non contiene il modulo finché non viene rilasciato.
 2. Configurare e generare un mese con almeno due operatori. Pubblicare, verificare che ciascuno veda solo il proprio calendario e PDF, con la medesima revisione.
 3. Registrare entrata, pausa, ripresa e uscita. La dashboard deve mostrare una sessione storica e quattro eventi; chiudere/riaprire l'app non deve timbrare automaticamente.
 4. Modalità aereo dopo avere letto lo stato online: registrare entrata e uscita, chiudere/riaprire, verificare la coda, riattivare rete e sincronizzare. Una sola copia di ciascun evento; i tempi del dispositivo e di ricezione restano distinguibili.
@@ -47,4 +47,16 @@ Usare il branch `feat/workforce-attendance-planning` in entrambi i repository. N
 7. Verificare ritardo, assenza di entrata, uscita mancante, turno extra, turno notturno, confine mese e cambio ora Europe/Rome.
 8. PDF: nome, tutte le date, +1 per notte, pause, ore e revisioni. Verificare la condivisione Android.
 9. FCM: verificare registrazione token, ricezione a schermo aperto, app in background e riapertura. Un force-stop Android è un caso distinto. Controllare ricevute e dettaglio di consegna nel Centro notifiche.
-10. Verificare layout web su desktop/tablet e mobile sul Samsung prima della pubblicazione ufficiale. Le bozze dei PR non sono un deployment in produzione.
+10. Verificare layout web su desktop/tablet e mobile sul Samsung prima della pubblicazione ufficiale. I PR non sono un deployment in produzione.
+
+## Preparazione indici dal PC
+
+Prerequisiti: Python 3, Google Cloud CLI e account già autorizzato a gestire gli indici del progetto. Dal repository web:
+
+```powershell
+gcloud auth login
+python scripts/prepare-workforce-indexes.py --project gestionale-radio
+python scripts/prepare-workforce-indexes.py --project gestionale-radio --apply
+```
+
+Il primo comando Python è un controllo e termina con codice 2 se mancano indici pronti. Il secondo termina con codice 0 solo quando tutti e quattro sono READY; codice 1 indica errore o timeout. Dopo un timeout la creazione continua su Firestore: rilanciare il controllo. L’accesso gcloud per amministrare gli indici è distinto dall’identità keyless usata dal backend. Non copiare token o credenziali nei repository.
