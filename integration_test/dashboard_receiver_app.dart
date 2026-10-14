@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:gestionale_radio/firebase_options.dart';
@@ -40,6 +41,18 @@ Future<void> main() async {
     throw StateError('An owned synthetic receiver is required.');
   }
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // The app also has direct Firestore readers. Isolate these together with
+  // the API; retain real Auth/FCM and the separate encrypted draft archive.
+  final firestore = FirebaseFirestore.instance;
+  firestore.settings = const Settings(persistenceEnabled: false);
+  firestore.useFirestoreEmulator(
+    '127.0.0.1',
+    18882,
+    automaticHostMapping: false,
+  );
+  // Configure before the first native call: FlutterFire caches its settings
+  // when creating the Pigeon app, including for clearPersistence().
+  await firestore.clearPersistence();
   await ApiService.initializeEndpoint();
   final directory = await getApplicationDocumentsDirectory();
   final evidence = File('${directory.path}/qa-dashboard.json');
@@ -115,6 +128,23 @@ Future<void> main() async {
       final scoped =
           SessionService.instance.tenantId == tenant &&
           SessionService.instance.role == 'OPERATOR';
+      String sdkAccess;
+      int? sdkAntennaCount;
+      try {
+        final antennas = await firestore
+            .collection('antennas')
+            .where('tenantId', isEqualTo: tenant)
+            .get()
+            .timeout(const Duration(seconds: 10));
+        sdkAccess = 'allowed';
+        sdkAntennaCount = antennas.size;
+      } on FirebaseException catch (error) {
+        sdkAccess = error.code == 'permission-denied'
+            ? 'denied'
+            : 'unavailable';
+      } catch (_) {
+        sdkAccess = 'unavailable';
+      }
       if (scoped && !photoChecked) {
         final draft = await ReportDraftStore().load(
           ReportDraftStore.storageKey(
@@ -191,11 +221,18 @@ Future<void> main() async {
 
       await evidence.writeAsString(
         jsonEncode({
-          'phase': registered && scoped && claims['radioDeviceId'] is String
+          'phase':
+              registered &&
+                  scoped &&
+                  validation.statusCode == 200 &&
+                  sdkAccess == 'allowed' &&
+                  claims['radioDeviceId'] is String
               ? 'ready'
               : 'starting',
           'apiRegistrationVerified': registered,
           'approvedScope': scoped,
+          'sdkFirestoreAccess': sdkAccess,
+          'sdkAntennaCount': sdkAntennaCount,
           'deviceId': claims['radioDeviceId'],
           'role': claims['role'],
           'provider': (claims['firebase'] as Map?)?['sign_in_provider'],
