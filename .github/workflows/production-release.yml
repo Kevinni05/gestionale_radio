@@ -91,7 +91,7 @@ jobs:
         run: |
           gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title "$RELEASE_NAME" --notes-file artifacts/release-notes.md "artifacts/$RELEASE_NAME.apk" "artifacts/$RELEASE_NAME.aab" artifacts/mobile-release.json
       - name: Store signed release
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: android-production-${{ github.run_id }}
           path: |
@@ -116,7 +116,7 @@ jobs:
           fs.writeFileSync('artifacts/release-symbols.aesgcm', Buffer.concat([nonce, cipher.getAuthTag(), encrypted]));
           NODE
       - name: Store encrypted symbol files separately
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: android-private-symbols-${{ github.run_id }}
           path: artifacts/release-symbols.aesgcm
