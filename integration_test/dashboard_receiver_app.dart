@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:gestionale_radio/firebase_options.dart';
@@ -90,6 +91,27 @@ Future<void> main() async {
     rethrow;
   }
   final openedNotices = <String>[], openedTasks = <String>[];
+  if (phase == 'field-gps') {
+    final position = await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        timeLimit: Duration(seconds: 30),
+      ),
+    );
+    // Explicit QA phase only. Private coordinates calibrate the synthetic
+    // emulator antenna for the physical geofence test; never publish them.
+    await File('${directory.path}/qa-field-position.json').writeAsString(
+      jsonEncode({
+        'uid': uid,
+        'tenantId': tenant,
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+        'accuracy': position.accuracy,
+        'observedAt': position.timestamp.toUtc().toIso8601String(),
+      }),
+      flush: true,
+    );
+  }
   AppNavigation.requestedNotification.addListener(() {
     final id = AppNavigation.requestedNotification.value;
     if (id != null && !openedNotices.contains(id)) openedNotices.add(id);
