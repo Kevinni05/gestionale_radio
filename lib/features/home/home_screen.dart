@@ -1,3 +1,4 @@
+import '../../antenna_dossier_screen.dart';
 import '../../attendance_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'home_repository.dart';
@@ -892,6 +893,19 @@ class _HomeScreenState extends ConsumerState<_HomeFeature>
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(builder: (_) => const AiHubScreen()),
                 ),
+              ),
+            ),
+            SizedBox(
+              width: width,
+              child: _buildLargeAction(
+                context,
+                title: 'Fascicoli offline',
+                subtitle: 'Impianti, documenti e fotografie scaricati',
+                icon: Icons.folder_open_outlined,
+                accent: AppColors.blue,
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const OfflineDossiersScreen(),
+                )),
               ),
             ),
             SizedBox(

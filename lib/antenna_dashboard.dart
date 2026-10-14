@@ -1,3 +1,4 @@
+import 'antenna_dossier_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -323,6 +324,14 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
                 icon: const Icon(Icons.history),
                 label: const Text('STORIA ASSET'),
               ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => AntennaDossierScreen(antennaId: antenna.id),
+                )),
+                icon: const Icon(Icons.folder_open_outlined),
+                label: const Text('FASCICOLO IMPIANTO'),
+              ),
               const SizedBox(height: 30),
             ]),
           ),
@@ -642,3 +651,4 @@ class _AntennaDashboardScreenState extends ConsumerState<AntennaDashboardScreen>
     );
   }
 }
+

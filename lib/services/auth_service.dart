@@ -1,3 +1,4 @@
+import 'dossier_repository.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'notification_service.dart';
@@ -97,6 +98,7 @@ class AuthService {
     await NotificationService.instance.clearDeviceToken();
     try {
       await OfflineTaskPackStore.clearOwn();
+      await DossierRepository.clearOwn();
     } catch (_) {
       /* No approved operator session. */
     }
@@ -111,3 +113,4 @@ class AuthService {
     return auth.authStateChanges();
   }
 }
+
