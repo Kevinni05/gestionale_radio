@@ -95,6 +95,9 @@ class OperationalStore(context: Context, messenger: BinaryMessenger? = null, pri
                         }
                         "protectAttachment" -> { protectAttachment(attachment(call.argument<String>("path"))); true }
                         "readAttachment" -> readAttachment(attachment(call.argument<String>("path")))
+                        "restageAttachment" -> {
+                            restageAttachment(call.argument<String>("source"), call.argument<String>("target")); true
+                        }
                         else -> throw IllegalArgumentException()
                     }
                     main.post { result.success(response) }
@@ -197,6 +200,19 @@ class OperationalStore(context: Context, messenger: BinaryMessenger? = null, pri
             // Existing encryption must be authenticated before accepting a retry.
             readAttachment(file); return
         }
+        writeProtectedAttachment(file, bytes)
+    }
+    internal fun restageAttachment(source: String?, target: String?) {
+        val sourceFile = attachment(source)
+        val root = File(app.filesDir, "radiotech_pending_reports").canonicalFile
+        val targetFile = File(target ?: throw IllegalArgumentException()).canonicalFile
+        if (!targetFile.path.startsWith(root.path + File.separator) || targetFile.exists()
+            || targetFile.parentFile == root || targetFile.parentFile?.isDirectory != true) throw IllegalArgumentException()
+        // AAD binds ciphertext to its operation/name. Authenticate the old file,
+        // then encrypt for the new operation without a plaintext file on disk.
+        writeProtectedAttachment(targetFile, readAttachment(sourceFile))
+    }
+    private fun writeProtectedAttachment(file: File, bytes: ByteArray) {
         if (bytes.isEmpty() || bytes.size > 10000000) throw IllegalArgumentException()
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, key)

@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'report_repository.dart';
 import 'report_payload.dart';
+import 'protected_report_photo.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -121,6 +122,7 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
   final ImagePicker _picker = ImagePicker();
   late final SignatureController _signatureController;
   final List<XFile> _attachments = [];
+  final Map<String, Future<Uint8List>> _photoReads = {};
   final List<_MeasurementRow> _measurementRows = [];
   final Map<String, int> _partsUsed = {};
   final Map<String, Map<String, dynamic>> _partsCatalog = {};
@@ -683,16 +685,13 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
         }
         return;
       }
-      var savedFile = pickedFile;
-      final draftKey = _draftKey;
-      if (draftKey != null) {
-        final staged = await _attachmentStore.stage(
-          requestKey:
-              'draft_${draftKey}_${DateTime.now().microsecondsSinceEpoch}',
-          files: [File(pickedFile.path)],
-        );
-        savedFile = XFile(staged.single['path']!);
-      }
+      final staged = await _attachmentStore.stage(
+        requestKey:
+            'draft_${_draftKey ?? 'photo'}_${DateTime.now().microsecondsSinceEpoch}',
+        files: [File(pickedFile.path)],
+      );
+      final savedFile = XFile(staged.single['path']!);
+      if (!mounted) return;
       setState(() {
         _attachments.add(savedFile);
       });
@@ -1324,6 +1323,11 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
     return measurements;
   }
 
+  Future<Uint8List> _readPhoto(XFile photo) => _photoReads.putIfAbsent(
+    photo.path,
+    () => _attachmentStore.readBytes({'name': photo.name, 'path': photo.path}),
+  );
+
   Widget _buildAttachmentPreview(BuildContext context) {
     if (_attachments.isEmpty) {
       return Container(
@@ -1358,21 +1362,21 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(16),
-                child: Image.file(
-                  File(attachment.path),
-                  width: 110,
-                  height: 110,
-                  fit: BoxFit.cover,
+                child: ProtectedReportPhoto(
+                  bytes: _readPhoto(attachment),
+                  semanticLabel: 'Foto allegata ${index + 1}',
                 ),
               ),
               Positioned(
                 right: 6,
                 top: 6,
-                child: GestureDetector(
-                  onTap: () {
+                child: IconButton(
+                  tooltip: 'Rimuovi foto ${index + 1}',
+                  onPressed: () {
                     final removed = _attachments[index];
                     setState(() {
                       _attachments.removeAt(index);
+                      _photoReads.remove(removed.path);
                     });
                     unawaited(
                       _attachmentStore.remove([
@@ -1381,18 +1385,10 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
                     );
                     _scheduleDraftSave();
                   },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.black.withValues(alpha: 0.55),
-                    ),
-                    padding: const EdgeInsets.all(6),
-                    child: const Icon(
-                      Icons.close,
-                      color: Colors.white,
-                      size: 16,
-                    ),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.black.withValues(alpha: 0.55),
                   ),
+                  icon: const Icon(Icons.close, color: Colors.white, size: 16),
                 ),
               ),
             ],
@@ -1771,9 +1767,7 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
       final identity = await _identityFuture;
       final photos = <ReportPhoto>[];
       for (final attachment in _attachments) {
-        photos.add(
-          ReportPhoto(attachment.name, await attachment.readAsBytes()),
-        );
+        photos.add(ReportPhoto(attachment.name, await _readPhoto(attachment)));
       }
       final pdfBytes = await MaintenanceReportPdf.build(
         antennaId: widget.antennaId,

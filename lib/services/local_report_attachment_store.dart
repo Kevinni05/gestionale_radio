@@ -183,8 +183,25 @@ class LocalReportAttachmentStore {
       throw StateError('File allegato non disponibile: $name.');
     }
     final target = File(_targetPath(destination, index, name));
-    await source.copy(target.path);
-    await _protect(target);
+    final root = await _storageRoot();
+    final storedSource =
+        Platform.isAndroid &&
+        _isStoredPath(
+          await source.resolveSymbolicLinks(),
+          await root.resolveSymbolicLinks(),
+        );
+    if (storedSource) {
+      if (await _channel.invokeMethod<bool>('restageAttachment', {
+            'source': source.path,
+            'target': target.path,
+          }) !=
+          true) {
+        throw StateError('Protezione allegato non riuscita. Invio sospeso.');
+      }
+    } else {
+      await source.copy(target.path);
+      await _protect(target);
+    }
     return {'name': _safeSegment(name), 'path': target.path};
   }
 
