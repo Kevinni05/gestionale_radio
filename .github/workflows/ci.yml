@@ -81,11 +81,21 @@ jobs:
         run: bash android/gradlew -p android :app:testDebugUnitTest --no-daemon
 
       - name: Store QA artifact
+        id: qa_artifact
+        # A copy for review is optional; compilation and native tests above remain mandatory.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: radiotech-android-qa
           path: build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 7
+
+      - name: Report unavailable QA artifact
+        if: steps.qa_artifact.outcome == 'failure'
+        run: |
+          echo '::warning::QA APK upload unavailable. Compilation and native checks passed; build locally for device testing or restore GitHub artifact capacity.'
+          echo '### QA artifact unavailable' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Compilation and native checks passed. The optional APK copy could not be stored (for example, exhausted GitHub artifact quota). Rebuild locally for device testing. Production distribution remains separately gated.' >> "$GITHUB_STEP_SUMMARY"
 
 
   distribute-android:

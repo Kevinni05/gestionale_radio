@@ -295,7 +295,7 @@ class _WorkforceScreenState extends State<WorkforceScreen> {
                           ),
                           const SizedBox(height: 12),
                           const Text(
-                            'Registrazione volontaria visibile ai responsabili. Nessun GPS continuo. Non sostituisce il sistema presenze.',
+                            'Registrazione volontaria visibile ai responsabili. Nessun GPS continuo. Timbrature disponibili nel registro presenze; ore soggette a validazione.',
                             style: TextStyle(fontSize: 12),
                           ),
                         ],
@@ -424,3 +424,4 @@ class _WorkforceScreenState extends State<WorkforceScreen> {
     ),
   );
 }
+
