@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -54,7 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -114,7 +114,7 @@ jobs:
       MOBILE_APP_DISPLAY_NAME: ${{ vars.MOBILE_APP_DISPLAY_NAME || 'RadioTech' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Check distribution configuration
         id: distribution-config
@@ -251,7 +251,7 @@ jobs:
       ANDROID_APPLICATION_ID: com.example.gestionale_radio.qa
       ANDROID_APP_LABEL: RadioTech QA
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.9'
