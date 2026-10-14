@@ -16,6 +16,57 @@ import java.io.File
 class OperationalStoreTest {
     private fun key() = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
 
+    @Test fun encryptedDraftPhotosAreRestagedForTheNewOperationWithoutChangingTheSource() {
+        val context = RuntimeEnvironment.getApplication()
+        context.deleteDatabase("radiotech-operational-v1.db")
+        val secret = key()
+        var store = OperationalStore(context, testKey = secret)
+        val root = File(context.filesDir, "radiotech_pending_reports").apply { mkdirs() }
+        val draft = File(root, "draft-photo").apply { mkdirs() }
+        val report = File(root, "pending-report").apply { mkdirs() }
+        val source = File(draft, "0_photo.jpg").apply { writeBytes(byteArrayOf(1, 2, 3, 4)) }
+        store.protectAttachment(source)
+        val originalCiphertext = source.readBytes()
+        val target = File(report, "1_photo.jpg")
+        store.restageAttachment(source.path, target.path)
+        assertArrayEquals(originalCiphertext, source.readBytes())
+        assertFalse(target.readBytes().contentEquals(originalCiphertext))
+        assertTrue(String(target.readBytes().copyOfRange(0, 8), Charsets.US_ASCII) == "RTENC001")
+        assertArrayEquals(byteArrayOf(1, 2, 3, 4), store.readAttachment(target))
+        assertThrows(IllegalArgumentException::class.java) { store.restageAttachment(source.path, target.path) }
+        val outside = File(context.filesDir, "outside-photo.jpg")
+        assertThrows(IllegalArgumentException::class.java) { store.restageAttachment(source.path, outside.path) }
+        assertFalse(outside.exists())
+        source.writeBytes(originalCiphertext.apply { this[lastIndex] = (this[lastIndex].toInt() xor 1).toByte() })
+        val rejected = File(report, "2_photo.jpg")
+        assertThrows(Exception::class.java) { store.restageAttachment(source.path, rejected.path) }
+        assertFalse(rejected.exists())
+        store.close().get()
+        store = OperationalStore(context, testKey = secret)
+        assertArrayEquals(byteArrayOf(1, 2, 3, 4), store.readAttachment(target))
+        store.close().get()
+        root.deleteRecursively()
+        context.deleteDatabase("radiotech-operational-v1.db")
+    }
+
+    @Test fun notificationOwnerSurvivesReopenWithoutExpandingTheKeyNamespace() {
+        val context = RuntimeEnvironment.getApplication()
+        context.deleteDatabase("radiotech-operational-v1.db")
+        val secret = key()
+        var store = OperationalStore(context, testKey = secret)
+        store.write(mapOf("notification_device_owner" to "operator-a"))
+        assertThrows(IllegalArgumentException::class.java) {
+            store.write(mapOf("notification_arbitrary_private_key" to "rejected"))
+        }
+        store.close().get()
+        store = OperationalStore(context, testKey = secret)
+        assertEquals("operator-a", store.read("notification_device_owner")["value"])
+        store.write(mapOf("notification_device_owner" to null))
+        assertNull(store.read("notification_device_owner")["value"])
+        store.close().get()
+        context.deleteDatabase("radiotech-operational-v1.db")
+    }
+
     @Test fun encryptedTransactionsSurviveReopenAndRefuseWrongKeyOrPartialUpdates() {
         val context = RuntimeEnvironment.getApplication()
         context.deleteDatabase("radiotech-operational-v1.db")

@@ -50,7 +50,7 @@ jobs:
 
   android-qa:
     name: Android QA compile
-    timeout-minutes: 20
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -78,14 +78,50 @@ jobs:
 
       - name: Native transactional storage and cryptography tests
         # Native cryptography/SQLite tests are separate from the Dart boundary mocks.
-        run: bash android/gradlew -p android :app:testDebugUnitTest --no-daemon
+        run: bash android/gradlew -p android :app:testDebugUnitTest -Ptarget-platform=android-arm64 --no-daemon
+
+      - name: Store native test results
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: radiotech-native-test-results
+          path: |
+            build/app/reports/tests/testDebugUnitTest
+            build/app/test-results/testDebugUnitTest
+          if-no-files-found: ignore
+          retention-days: 1
 
       - name: Store QA artifact
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: radiotech-android-qa
           path: build/app/outputs/flutter-apk/app-debug.apk
-          retention-days: 7
+          retention-days: 1
+
+      - name: Record native results and QA digest without artifact storage
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          from xml.etree import ElementTree as ET
+          files = list(Path('build/app/test-results/testDebugUnitTest').glob('TEST-*.xml'))
+          totals = {key: 0 for key in ['tests', 'failures', 'errors', 'skipped']}
+          for file in files:
+              root = ET.parse(file).getroot()
+              for key in totals:
+                  totals[key] += int(root.get(key, '0'))
+          message = f'Native XML reports: {len(files)}; {totals}'
+          print(message)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write(message + '\n\nQA APK uploads are optional evidence; storage quota warnings do not replace signed release delivery.\n')
+          PY
+          if [ -f build/app/outputs/flutter-apk/app-debug.apk ]; then
+            sha256sum build/app/outputs/flutter-apk/app-debug.apk | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
 
 
   distribute-android:

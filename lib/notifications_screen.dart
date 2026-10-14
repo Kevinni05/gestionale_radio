@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 import 'theme/radiotech_glass.dart';
 import 'services/api_service.dart';
 import 'tasks_screen.dart';
+import 'services/app_navigation.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({
     super.key,
     this.loadNotifications,
     this.onOpenTask,
+    this.highlightNotificationId,
   });
   final Future<List<Map<String, dynamic>>> Function()? loadNotifications;
   final void Function(String)? onOpenTask;
+  final String? highlightNotificationId;
   @override
   State<NotificationsScreen> createState() => _NotificationsScreenState();
 }
@@ -20,11 +23,22 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   @override
   void initState() {
     super.initState();
+    AppNavigation.notificationsRevision.addListener(_reloadFromNotification);
     _future = _load();
   }
 
   Future<List<Map<String, dynamic>>> _load() =>
       (widget.loadNotifications ?? ApiService.instance.getMyNotifications)();
+
+  void _reloadFromNotification() {
+    if (mounted) _refresh();
+  }
+
+  @override
+  void dispose() {
+    AppNavigation.notificationsRevision.removeListener(_reloadFromNotification);
+    super.dispose();
+  }
 
   Future<void> _refresh() async {
     final future = _load();
@@ -98,7 +112,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             ),
           );
         }
-        final notifications = snapshot.data ?? const [];
+        final notifications = [...?snapshot.data];
+        final highlighted = notifications.indexWhere(
+          (item) => item['id'] == widget.highlightNotificationId,
+        );
+        if (highlighted > 0) {
+          notifications.insert(0, notifications.removeAt(highlighted));
+        }
         return RefreshIndicator(
           onRefresh: _refresh,
           child: ListView.separated(
@@ -120,6 +140,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               final taskId = item['taskId']?.toString().trim() ?? '';
               return Card(
                 color: Colors.transparent,
+                shape: item['id'] == widget.highlightNotificationId
+                    ? RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        side: BorderSide(
+                          color: Theme.of(context).colorScheme.primary,
+                          width: 2,
+                        ),
+                      )
+                    : null,
                 child: RadioTechGlass(
                   padding: const EdgeInsets.all(16),
                   child: Column(

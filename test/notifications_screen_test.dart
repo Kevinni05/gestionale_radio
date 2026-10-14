@@ -2,8 +2,52 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gestionale_radio/notifications_screen.dart';
 import 'package:gestionale_radio/theme/radiotech_theme.dart';
+import 'package:gestionale_radio/services/app_navigation.dart';
 
 void main() {
+  testWidgets(
+    'an open inbox reloads on a received notice and highlights the cold-start destination',
+    (tester) async {
+      var calls = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: NotificationsScreen(
+            highlightNotificationId: 'new',
+            loadNotifications: () async {
+              calls++;
+              return [
+                {
+                  'id': 'old',
+                  'title': 'Messaggio precedente',
+                  'message': 'Vecchio avviso',
+                },
+                if (calls > 1)
+                  {
+                    'id': 'new',
+                    'title': 'Nuovo avviso',
+                    'message': 'Da leggere',
+                  },
+              ];
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Nuovo avviso'), findsNothing);
+      AppNavigation.refreshNotifications();
+      await tester.pumpAndSettle();
+      expect(find.text('Nuovo avviso'), findsOneWidget);
+      expect(calls, 2);
+      expect(
+        tester.getTopLeft(find.text('Nuovo avviso')).dy,
+        lessThan(tester.getTopLeft(find.text('Messaggio precedente')).dy),
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      AppNavigation.refreshNotifications();
+      expect(tester.takeException(), isNull);
+      expect(calls, 2);
+    },
+  );
   testWidgets(
     'messages refresh and linked notifications open the correct assignment',
     (tester) async {

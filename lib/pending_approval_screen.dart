@@ -18,7 +18,38 @@ class PendingApprovalScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isError = state == AccessState.error;
+    final (title, message, icon) = switch (state) {
+      AccessState.pending => (
+        'ACCOUNT IN ATTESA',
+        'Un responsabile deve abilitare il tuo account. Ricontrolla dopo l’approvazione.',
+        Icons.hourglass_top_rounded,
+      ),
+      AccessState.offline => (
+        'RETE NON DISPONIBILE',
+        'Torna online per verificare l’accesso. Le bozze sono conservate sul dispositivo.',
+        Icons.wifi_off_rounded,
+      ),
+      AccessState.expired => (
+        'SESSIONE SCADUTA',
+        'Esci e accedi nuovamente con le credenziali o il QR di attivazione. Le bozze restano associate al tuo account.',
+        Icons.lock_clock_outlined,
+      ),
+      AccessState.suspended => (
+        'ACCESSO NON AUTORIZZATO',
+        'L’account è sospeso o non ha più i permessi richiesti. Contatta il responsabile; le bozze sono conservate.',
+        Icons.person_off_outlined,
+      ),
+      AccessState.deviceRevoked => (
+        'DISPOSITIVO REVOCATO',
+        'La centrale ha revocato questo dispositivo. Contatta il responsabile prima di attivarlo nuovamente.',
+        Icons.phonelink_erase_outlined,
+      ),
+      _ => (
+        'VERIFICA NON RIUSCITA',
+        'Non riesco a verificare i tuoi permessi. Controlla la connessione e riprova.',
+        Icons.cloud_off_outlined,
+      ),
+    };
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -29,16 +60,10 @@ class PendingApprovalScreen extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  isError
-                      ? Icons.wifi_off_rounded
-                      : Icons.hourglass_top_rounded,
-                  size: 64,
-                  color: theme.colorScheme.primary,
-                ),
+                Icon(icon, size: 64, color: theme.colorScheme.primary),
                 const SizedBox(height: 24),
                 Text(
-                  isError ? 'VERIFICA NON RIUSCITA' : 'ACCOUNT IN ATTESA',
+                  title,
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: Colors.white,
@@ -49,12 +74,7 @@ class PendingApprovalScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  isError
-                      ? 'Non riesco a verificare i tuoi permessi. '
-                            'Controlla la connessione e riprova.'
-                      : 'Il tuo account è stato creato ma non è ancora '
-                            'abilitato. Un responsabile deve approvarlo: '
-                            'appena fatto, tocca "Ricontrolla".',
+                  message,
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.grey[400], height: 1.5),
                 ),

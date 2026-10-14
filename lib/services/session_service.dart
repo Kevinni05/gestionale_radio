@@ -1,53 +1,100 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-
-import 'notification_service.dart';
-import 'dart:async';
-import 'offline_sync_service.dart';
+import 'package:http/http.dart' as http;
+import 'api_http_client.dart';
 import 'api_service.dart';
+import 'local_operational_store.dart';
+import 'notification_service.dart';
+import 'offline_sync_service.dart';
 
-/// Esito del controllo di accesso all'app operatori.
 enum AccessState {
-  /// L'utente ha un ruolo abilitato all'app.
   approved,
-
-  /// Account valido ma senza ruolo abilitato (es. auto-registrato, in attesa
-  /// di approvazione da parte di un manager).
+  approvedOffline,
   pending,
-
-  /// Non e' stato possibile verificare i permessi (rete assente, sessione scaduta).
+  offline,
+  expired,
+  suspended,
+  deviceRevoked,
   error,
 }
 
-/// Legge il ruolo dai custom claims dell'ID token Firebase.
-///
-/// Il backend assegna il claim `role` quando un manager approva l'operatore
-/// (`POST /api/operators/{id}/approve`) o quando genera le credenziali.
+/// Restored identity is checked by the API; offline access only permits local work.
 class SessionService {
-  SessionService._();
+  SessionService({
+    FirebaseAuth? auth,
+    http.Client? client,
+    LocalOperationalStore? store,
+    DateTime Function()? now,
+    Future<void> Function(String, String)? bindDevice,
+    void Function()? onApproved,
+    this.offlineGrace = const Duration(hours: 8),
+  }) : _injectedAuth = auth,
+       _client = client ?? ApiHttpClient.instance,
+       _store = store ?? LocalOperationalStore.instance,
+       _now = now ?? DateTime.now,
+       _bindDevice = bindDevice ?? ApiService.instance.bindDeviceSession,
+       _onApproved =
+           onApproved ??
+           (() {
+             unawaited(NotificationService.instance.syncTokenWithBackend());
+             unawaited(OfflineSyncService.instance.retryPending());
+           });
+  static final instance = SessionService();
+  final FirebaseAuth? _injectedAuth;
+  FirebaseAuth get _auth => _injectedAuth ?? FirebaseAuth.instance;
+  final http.Client _client;
+  final LocalOperationalStore _store;
+  final DateTime Function() _now;
+  final Future<void> Function(String, String) _bindDevice;
+  final void Function() _onApproved;
+  final Duration offlineGrace;
+  String? _uid, _tenantId, _operatorId, _role;
+  int _revision = 0;
+  String? _blockedOfflineUid;
 
-  static final SessionService instance = SessionService._();
+  Stream<String?> get scopeChanges =>
+      _auth.idTokenChanges().asyncMap((user) async {
+        if (user == null) return null;
+        final claims = (await user.getIdTokenResult()).claims;
+        return jsonEncode([user.uid, claims?['tenantId'], claims?['role']]);
+      }).distinct();
 
-  String? _tenantId;
-  String? _operatorId;
-  String? _role;
+  void invalidateScope() {
+    final uid = _auth.currentUser?.uid;
+    _revision++;
+    _blockedOfflineUid = uid;
+    _clear();
+    if (uid != null) {
+      unawaited(
+        _store.delete(_key(uid)).catchError((Object _) {
+          debugPrint('Verifica locale sospesa: ripristina la sessione online.');
+        }),
+      );
+    }
+  }
 
-  String? get tenantId => _tenantId;
-  String? get operatorId => _operatorId;
-  bool get isCustomer => _role == 'CUSTOMER';
-  bool get managementOnly => {
-    'CHIEF_EXECUTIVE',
-    'CAPO',
-    'NETWORK_MANAGER',
-    'ENGINEER',
-    'VIEWER',
-  }.contains(_role);
-  bool get canManage => {'ADMIN', 'SUPER_ADMIN'}.contains(_role);
+  bool get _ownsScope => _uid != null && _auth.currentUser?.uid == _uid;
+  String? get tenantId => _ownsScope ? _tenantId : null;
+  String? get operatorId => _ownsScope ? _operatorId : null;
+  String? get role => _ownsScope ? _role : null;
+  bool get isCustomer => _ownsScope && _role == 'CUSTOMER';
+  bool get managementOnly =>
+      _ownsScope &&
+      {
+        'CHIEF_EXECUTIVE',
+        'CAPO',
+        'NETWORK_MANAGER',
+        'ENGINEER',
+        'VIEWER',
+      }.contains(_role);
+  bool get canManage => _ownsScope && {'ADMIN', 'SUPER_ADMIN'}.contains(_role);
   bool get canManageAccounts =>
+      _ownsScope &&
       {'ADMIN', 'SUPER_ADMIN', 'CHIEF_EXECUTIVE', 'CAPO'}.contains(_role);
-
-  /// Ruoli ammessi dal backend su `/api/operator/**`.
-  static const Set<String> _appRoles = {
+  static const _appRoles = {
     'OPERATOR',
     'OPERATORE',
     'ADMIN',
@@ -59,68 +106,191 @@ class SessionService {
     'ENGINEER',
     'VIEWER',
   };
+  static const _deviceRoles = {'OPERATOR', 'OPERATORE', 'CUSTOMER', 'VIEWER'};
+  static bool isAppRole(Object? role) =>
+      _appRoles.contains(role?.toString().trim().toUpperCase());
+  static bool allowsLocalAccess(AccessState state) =>
+      state == AccessState.approved || state == AccessState.approvedOffline;
+  static String _key(String uid) =>
+      'session_validation_${base64Url.encode(utf8.encode(uid))}';
+  bool _current(User user, int revision) =>
+      _revision == revision && _auth.currentUser?.uid == user.uid;
+  void _clear() {
+    _uid = _tenantId = _operatorId = _role = null;
+  }
 
-  static bool isAppRole(Object? role) {
-    if (role == null) return false;
-    return _appRoles.contains(role.toString().trim().toUpperCase());
+  void _capture(String uid, Map<String, dynamic> claims) {
+    _uid = uid;
+    _tenantId = claims['tenantId']?.toString().trim();
+    _operatorId = claims['operatorId']?.toString().trim();
+    _role = claims['role']?.toString().trim().toUpperCase();
   }
 
   Future<AccessState> resolveAccess({bool forceRefresh = false}) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = _auth.currentUser;
+    final revision = ++_revision;
     if (user == null) {
-      _tenantId = null;
-      _operatorId = null;
-      return AccessState.error;
+      _clear();
+      return AccessState.expired;
     }
-
     try {
-      var result = await user.getIdTokenResult(forceRefresh);
-      _captureScope(result.claims);
-      var approved = isAppRole(result.claims?['role']) && _tenantId != null;
-
-      // Il token in cache puo' non avere ancora il claim appena assegnato dal
-      // manager: prima di dichiarare "in attesa" chiediamo un token aggiornato.
-      if (!approved && !forceRefresh) {
-        result = await user.getIdTokenResult(true);
-        _captureScope(result.claims);
-        approved = isAppRole(result.claims?['role']) && _tenantId != null;
-      }
-
-      if (approved) {
-        final recentLogin =
-            result.authTime != null &&
-            DateTime.now().difference(result.authTime!).inSeconds <= 300;
-        if (result.claims?['radioDeviceId'] == null && recentLogin) {
-          await ApiService.instance.bindDeviceSession(_tenantId!, user.uid);
-          result = await FirebaseAuth.instance.currentUser!.getIdTokenResult(
-            true,
-          );
-          _captureScope(result.claims);
-          if (!isAppRole(result.claims?['role']) || _tenantId == null) {
-            return AccessState.error;
-          }
+      var identity = await user
+          .getIdTokenResult(forceRefresh)
+          .timeout(const Duration(seconds: 15));
+      if (!_current(user, revision)) return AccessState.expired;
+      var claims = identity.claims ?? <String, dynamic>{};
+      if (!isAppRole(claims['role']) ||
+          (claims['tenantId']?.toString().trim() ?? '').isEmpty) {
+        if (!forceRefresh) {
+          identity = await user
+              .getIdTokenResult(true)
+              .timeout(const Duration(seconds: 15));
+          claims = identity.claims ?? <String, dynamic>{};
         }
-        // Il token FCM non era stato accettato dal backend prima dell'approvazione.
-        if (!isCustomer && !managementOnly) {
-          unawaited(NotificationService.instance.syncTokenWithBackend());
-          unawaited(OfflineSyncService.instance.retryPending());
+        if (!_current(user, revision)) return AccessState.expired;
+        if (!isAppRole(claims['role']) ||
+            (claims['tenantId']?.toString().trim() ?? '').isEmpty) {
+          _clear();
+          await _store.delete(_key(user.uid));
+          return AccessState.pending;
         }
-        return AccessState.approved;
       }
-      return AccessState.pending;
-    } catch (e) {
-      _tenantId = null;
-      _operatorId = null;
-      debugPrint('Verifica accesso non riuscita: $e');
+      final token = identity.token;
+      if (token == null || token.isEmpty) {
+        _clear();
+        return AccessState.expired;
+      }
+      final response = await _client
+          .get(
+            Uri.parse(ApiService.apiV1Url('/auth/me')),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(const Duration(seconds: 15));
+      if (!_current(user, revision)) return AccessState.expired;
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        _clear();
+        await _store.delete(_key(user.uid));
+        String message = '';
+        try {
+          message =
+              (jsonDecode(response.body) as Map)['message']
+                  ?.toString()
+                  .toLowerCase() ??
+              '';
+        } catch (_) {}
+        if (message.contains('dispositivo')) return AccessState.deviceRevoked;
+        return response.statusCode == 401
+            ? AccessState.expired
+            : AccessState.suspended;
+      }
+      if (response.statusCode >= 500 ||
+          response.statusCode == 429 ||
+          response.statusCode == 408) {
+        return _offline(user, revision, expectedClaims: claims);
+      }
+      if (response.statusCode != 200) {
+        _clear();
+        return AccessState.error;
+      }
+      final raw = jsonDecode(response.body);
+      final data = raw is Map && raw['data'] is Map
+          ? raw['data'] as Map
+          : raw as Map;
+      if (data['uid'] != user.uid || data['claims'] is! Map) {
+        _clear();
+        return AccessState.error;
+      }
+      claims = Map<String, dynamic>.from(data['claims'] as Map);
+      if (!isAppRole(claims['role']) ||
+          (claims['tenantId']?.toString().trim() ?? '').isEmpty) {
+        _clear();
+        await _store.delete(_key(user.uid));
+        return AccessState.pending;
+      }
+      final role = claims['role']?.toString().trim().toUpperCase();
+      final age = identity.authTime == null
+          ? null
+          : _now().difference(identity.authTime!);
+      if (claims['radioDeviceId'] == null &&
+          age != null &&
+          age >= Duration.zero &&
+          age <= const Duration(minutes: 5) &&
+          _deviceRoles.contains(role)) {
+        await _bindDevice(claims['tenantId'].toString(), user.uid);
+        if (!_current(user, revision)) return AccessState.expired;
+      }
+      await _store.write(
+        _key(user.uid),
+        jsonEncode({
+          'uid': user.uid,
+          'claims': {
+            'tenantId': claims['tenantId'],
+            'role': claims['role'],
+            'operatorId': claims['operatorId'],
+          },
+          'validatedAt': _now().toUtc().toIso8601String(),
+        }),
+      );
+      if (!_current(user, revision)) return AccessState.expired;
+      _capture(user.uid, claims);
+      _blockedOfflineUid = null;
+      if (!isCustomer && !managementOnly) _onApproved();
+      return AccessState.approved;
+    } on FirebaseAuthException catch (error) {
+      if (!_current(user, revision)) return AccessState.expired;
+      if (error.code == 'network-request-failed') {
+        return _offline(user, revision);
+      }
+      _clear();
+      await _store.delete(_key(user.uid));
+      return error.code == 'user-disabled'
+          ? AccessState.suspended
+          : AccessState.expired;
+    } on SocketException {
+      return _offline(user, revision);
+    } on TimeoutException {
+      return _offline(user, revision);
+    } on http.ClientException {
+      return _offline(user, revision);
+    } catch (error) {
+      if (_current(user, revision)) _clear();
+      debugPrint('Verifica accesso non riuscita: ${error.runtimeType}');
       return AccessState.error;
     }
   }
 
-  void _captureScope(Map<String, dynamic>? claims) {
-    _role = claims?['role']?.toString().trim().toUpperCase();
-    final tenant = claims?['tenantId']?.toString().trim();
-    final operator = claims?['operatorId']?.toString().trim();
-    _tenantId = tenant == null || tenant.isEmpty ? null : tenant;
-    _operatorId = operator == null || operator.isEmpty ? null : operator;
+  Future<AccessState> _offline(
+    User user,
+    int revision, {
+    Map<String, dynamic>? expectedClaims,
+  }) async {
+    if (!_current(user, revision)) return AccessState.expired;
+    if (_blockedOfflineUid == user.uid) return AccessState.offline;
+    try {
+      final raw = await _store.read(_key(user.uid));
+      if (!_current(user, revision)) return AccessState.expired;
+      if (raw != null) {
+        final record = jsonDecode(raw) as Map;
+        final age = _now().difference(
+          DateTime.parse(record['validatedAt'] as String),
+        );
+        final claims = Map<String, dynamic>.from(record['claims'] as Map);
+        if (record['uid'] == user.uid &&
+            (expectedClaims == null ||
+                expectedClaims['tenantId'] == claims['tenantId'] &&
+                    expectedClaims['role'] == claims['role']) &&
+            age >= Duration.zero &&
+            age < offlineGrace &&
+            isAppRole(claims['role']) &&
+            (claims['tenantId']?.toString().trim() ?? '').isNotEmpty) {
+          _capture(user.uid, claims);
+          return AccessState.approvedOffline;
+        }
+      }
+    } catch (_) {
+      /* Preserve unreadable records for recovery. */
+    }
+    if (_current(user, revision)) _clear();
+    return AccessState.offline;
   }
 }

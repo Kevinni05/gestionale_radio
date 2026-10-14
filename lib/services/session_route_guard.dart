@@ -9,10 +9,14 @@ class SessionRouteGuard extends StatefulWidget {
     required this.identities,
     required this.initialIdentity,
     required this.child,
+    this.scopes,
+    this.onScopeChanged,
   });
   final Stream<String?> identities;
   final String? initialIdentity;
   final Widget child;
+  final Stream<String?>? scopes;
+  final VoidCallback? onScopeChanged;
 
   @override
   State<SessionRouteGuard> createState() => _SessionRouteGuardState();
@@ -21,6 +25,9 @@ class SessionRouteGuard extends StatefulWidget {
 class _SessionRouteGuardState extends State<SessionRouteGuard> {
   late final StreamSubscription<String?> _subscription;
   String? _identity;
+  String? _scope;
+  int _scopeRevision = 0;
+  StreamSubscription<String?>? _scopeSubscription;
 
   @override
   void initState() {
@@ -29,20 +36,41 @@ class _SessionRouteGuardState extends State<SessionRouteGuard> {
     _subscription = widget.identities.listen((identity) {
       if (identity == _identity) return;
       _identity = identity;
-      AppNavigation.requestedTask.value = null;
+      _scope = null;
+      setState(() => _scopeRevision++);
+      AppNavigation.clearRequests();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
       });
       WidgetsBinding.instance.ensureVisualUpdate();
     });
+    _scopeSubscription = widget.scopes?.listen(
+      (scope) {
+        final previous = _scope;
+        _scope = scope;
+        if (previous == null || scope == previous) return;
+        widget.onScopeChanged?.call();
+        setState(() => _scopeRevision++);
+        AppNavigation.clearRequests();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
+        });
+        WidgetsBinding.instance.ensureVisualUpdate();
+      },
+      onError: (Object _) {
+        /* Online access verification handles connectivity failures. */
+      },
+    );
   }
 
   @override
   void dispose() {
     unawaited(_subscription.cancel());
+    unawaited(_scopeSubscription?.cancel());
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => widget.child;
+  Widget build(BuildContext context) =>
+      KeyedSubtree(key: ValueKey(_scopeRevision), child: widget.child);
 }

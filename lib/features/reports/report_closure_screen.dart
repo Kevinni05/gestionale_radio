@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'report_repository.dart';
 import 'report_payload.dart';
+import 'protected_report_photo.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -38,6 +39,8 @@ class ReportClosureScreen extends StatelessWidget {
   final Future<Position?> Function()? locate;
   final Future<Map<String, String>> Function()? loadIdentity;
   final Future<List<Map<String, dynamic>>> Function()? loadInventory;
+  final ReportDraftStore? draftStore;
+  final String? draftKey;
 
   const ReportClosureScreen({
     required this.checklistResults,
@@ -49,6 +52,8 @@ class ReportClosureScreen extends StatelessWidget {
     this.locate,
     this.loadIdentity,
     this.loadInventory,
+    this.draftStore,
+    this.draftKey,
     super.key,
   });
 
@@ -64,6 +69,8 @@ class ReportClosureScreen extends StatelessWidget {
       locate: locate,
       loadIdentity: loadIdentity,
       loadInventory: loadInventory,
+      draftStore: draftStore,
+      draftKey: draftKey,
     ),
   );
 }
@@ -83,6 +90,8 @@ class _ReportClosureFeature extends ConsumerStatefulWidget {
   final Future<Position?> Function()? locate;
   final Future<Map<String, String>> Function()? loadIdentity;
   final Future<List<Map<String, dynamic>>> Function()? loadInventory;
+  final ReportDraftStore? draftStore;
+  final String? draftKey;
 
   const _ReportClosureFeature({
     required this.checklistResults,
@@ -94,6 +103,8 @@ class _ReportClosureFeature extends ConsumerStatefulWidget {
     this.locate,
     this.loadIdentity,
     this.loadInventory,
+    this.draftStore,
+    this.draftKey,
   });
 
   @override
@@ -111,6 +122,7 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
   final ImagePicker _picker = ImagePicker();
   late final SignatureController _signatureController;
   final List<XFile> _attachments = [];
+  final Map<String, Future<Uint8List>> _photoReads = {};
   final List<_MeasurementRow> _measurementRows = [];
   final Map<String, int> _partsUsed = {};
   final Map<String, Map<String, dynamic>> _partsCatalog = {};
@@ -127,7 +139,14 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
   late final Future<Map<String, String>> _identityFuture;
   Timer? _draftSaveTimer;
   String? _draftKey;
-  final ReportDraftStore _draftStore = ReportDraftStore();
+  late final ReportDraftStore _draftStore;
+  bool _draftDirty = false;
+  bool _canLeave = false;
+  bool _leaving = false;
+  int _draftRevision = 0;
+  DateTime? _draftSavedAt;
+  String? _draftError;
+  String? _draftRestoreError;
   Future<void> _draftReady = Future<void>.value();
   UrgentReportSignal? _urgentSignal;
   final LocalReportAttachmentStore _attachmentStore =
@@ -136,6 +155,7 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
   @override
   void initState() {
     super.initState();
+    _draftStore = widget.draftStore ?? ReportDraftStore();
     _checks = Map.of(widget.checklistResults);
     WidgetsBinding.instance.addObserver(this);
     _identityFuture = _loadIdentity();
@@ -157,13 +177,16 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
 
     final uid = AuthService.instance.currentUid;
     final tenantId = SessionService.instance.tenantId;
-    if (uid != null && tenantId != null) {
-      _draftKey = ReportDraftStore.storageKey(
-        tenantId: tenantId,
-        operatorUid: uid,
-        taskScope: widget.taskId ?? widget.antennaId,
-      );
-      _draftReady = _restoreDraft();
+    if (widget.draftKey != null || uid != null && tenantId != null) {
+      _draftKey =
+          widget.draftKey ??
+          ReportDraftStore.storageKey(
+            tenantId: tenantId!,
+            operatorUid: uid!,
+            taskScope: widget.taskId ?? widget.antennaId,
+          );
+      _restoringDraft = true;
+      _draftReady = _loadDraftSafely();
       // The same future is awaited before submit; keep restoration errors visible there.
       unawaited(_draftReady.catchError((Object _) {}));
       unawaited(_restorePendingSubmission());
@@ -369,6 +392,11 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _draftSaveTimer?.cancel();
+    // Forced account/role navigation bypasses the interactive back handler.
+    // Snapshot controllers synchronously before disposing them.
+    if (_draftDirty && !_restoringDraft && _draftRestoreError == null) {
+      unawaited(_saveDraft());
+    }
     _animationController.dispose();
     _notesController.dispose();
     _centralAlertController.dispose();
@@ -411,6 +439,8 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
 
   void _scheduleDraftSave() {
     if (_restoringDraft || _draftKey == null || !mounted) return;
+    _draftDirty = true;
+    _draftRevision++;
     _draftSaveTimer?.cancel();
     _draftSaveTimer = Timer(const Duration(milliseconds: 400), () {
       unawaited(_saveDraft());
@@ -420,36 +450,101 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
   Future<void> _saveDraft({bool force = false}) async {
     final key = _draftKey;
     if (key == null || _restoringDraft || _isSubmitting && !force) return;
+    if (_draftRestoreError != null) {
+      if (force) throw StateError(_draftRestoreError!);
+      return;
+    }
+    final revision = _draftRevision;
+    final savedAt = DateTime.now();
+    try {
+      await _draftStore.save(key, {
+        'savedAt': savedAt.toUtc().toIso8601String(),
+        'notes': _notesController.text,
+        'checklist': Map<String, bool>.of(_checks),
+        'centralAlert': _centralAlertController.text,
+        'hasCentralAlert': _hasCentralAlert,
+        if (_urgentSignal != null) 'urgentSignal': _urgentSignal!.toJson(),
+        'parts': Map<String, int>.from(_partsUsed),
+        'measurements': _measurementRows
+            .map(
+              (row) => {
+                'name': row.nameController.text,
+                'value': row.valueController.text,
+              },
+            )
+            .toList(),
+        'signaturePoints': _signatureController.points
+            .map(
+              (point) => {
+                'x': point.offset.dx,
+                'y': point.offset.dy,
+                'type': point.type.name,
+                'pressure': point.pressure,
+              },
+            )
+            .toList(),
+        'attachments': _attachments
+            .map((file) => {'name': file.name, 'path': file.path})
+            .toList(),
+      });
+      if (mounted) {
+        setState(() {
+          _draftSavedAt = savedAt;
+          _draftError = null;
+          _draftDirty = revision != _draftRevision;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _draftError =
+              'Bozza non salvata. Mantieni aperto il report e riprova.',
+        );
+      }
+      if (force) {
+        throw StateError(
+          'Bozza non salvata. Riprova prima di uscire o inviare.',
+        );
+      }
+    }
+  }
 
-    await _draftStore.save(key, {
-      'notes': _notesController.text,
-      'checklist': Map<String, bool>.of(_checks),
-      'centralAlert': _centralAlertController.text,
-      'hasCentralAlert': _hasCentralAlert,
-      if (_urgentSignal != null) 'urgentSignal': _urgentSignal!.toJson(),
-      'parts': Map<String, int>.from(_partsUsed),
-      'measurements': _measurementRows
-          .map(
-            (row) => {
-              'name': row.nameController.text,
-              'value': row.valueController.text,
-            },
-          )
-          .toList(),
-      'signaturePoints': _signatureController.points
-          .map(
-            (point) => {
-              'x': point.offset.dx,
-              'y': point.offset.dy,
-              'type': point.type.name,
-              'pressure': point.pressure,
-            },
-          )
-          .toList(),
-      'attachments': _attachments
-          .map((file) => {'name': file.name, 'path': file.path})
-          .toList(),
-    });
+  Future<void> _loadDraftSafely() async {
+    try {
+      await _restoreDraft();
+      _draftRestoreError = null;
+    } catch (_) {
+      _draftRestoreError =
+          'La bozza o un allegato non è leggibile. Riprova il recupero prima di modificarla.';
+      rethrow;
+    } finally {
+      _restoringDraft = false;
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _leaveReport() async {
+    if (_leaving || _isSubmitting) return;
+    _leaving = true;
+    try {
+      _draftSaveTimer?.cancel();
+      if (_draftRestoreError == null) {
+        await _draftReady;
+        await _saveDraft(force: true);
+      }
+      if (!mounted) return;
+      setState(() => _canLeave = true);
+      Navigator.of(context).pop();
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () =>
+              _draftError = 'Uscita sospesa: la bozza non è salvata. Riprova.',
+        );
+      }
+    } finally {
+      _leaving = false;
+    }
   }
 
   Future<void> _restoreDraft() async {
@@ -533,7 +628,7 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
           );
           restoredAttachments.add(XFile(file.path));
         } on StateError {
-          continue;
+          throw StateError('Allegato della bozza non leggibile.');
         }
       }
     }
@@ -542,6 +637,9 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
     setState(() {
       _measurementRows.addAll(rows);
       _attachments.addAll(restoredAttachments);
+      _draftSavedAt = DateTime.tryParse(
+        draft['savedAt']?.toString() ?? '',
+      )?.toLocal();
     });
     _restoringDraft = false;
     _updateFormValidity();
@@ -549,6 +647,7 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
 
   Future<void> _clearDraft() async {
     _draftSaveTimer?.cancel();
+    _draftDirty = false;
     for (final attachment in _attachments) {
       await _attachmentStore.remove([
         {'name': attachment.name, 'path': attachment.path},
@@ -586,16 +685,13 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
         }
         return;
       }
-      var savedFile = pickedFile;
-      final draftKey = _draftKey;
-      if (draftKey != null) {
-        final staged = await _attachmentStore.stage(
-          requestKey:
-              'draft_${draftKey}_${DateTime.now().microsecondsSinceEpoch}',
-          files: [File(pickedFile.path)],
-        );
-        savedFile = XFile(staged.single['path']!);
-      }
+      final staged = await _attachmentStore.stage(
+        requestKey:
+            'draft_${_draftKey ?? 'photo'}_${DateTime.now().microsecondsSinceEpoch}',
+        files: [File(pickedFile.path)],
+      );
+      final savedFile = XFile(staged.single['path']!);
+      if (!mounted) return;
       setState(() {
         _attachments.add(savedFile);
       });
@@ -624,135 +720,173 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Chiusura intervento',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+    return PopScope(
+      canPop: !_isSubmitting && (_canLeave || _draftKey == null),
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) unawaited(_leaveReport());
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text(
+            'Chiusura intervento',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          backgroundColor: const Color(0xF210111A),
         ),
-        backgroundColor: const Color(0xF210111A),
-      ),
-      bottomNavigationBar: _buildActionBar(context),
-      body: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 920),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 32),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildFormHeader(context),
-                      const SizedBox(height: 16),
-                      if (_isSubmitting) ...[
-                        const LinearProgressIndicator(),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          child: Text(
-                            _submissionStage,
-                            key: const ValueKey('report-send-progress'),
+        bottomNavigationBar: _buildActionBar(context),
+        body: CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 920),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 18, 16, 32),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildFormHeader(context),
+                        if (_draftKey != null) ...[
+                          const SizedBox(height: 12),
+                          Semantics(
+                            liveRegion: true,
+                            child: Text(
+                              _draftRestoreError ??
+                                  _draftError ??
+                                  (_restoringDraft
+                                      ? 'Recupero della bozza…'
+                                      : _draftSavedAt == null
+                                      ? 'Bozza pronta per il salvataggio · ${_attachments.length} allegati'
+                                      : 'Bozza salvata alle ${_draftSavedAt!.hour.toString().padLeft(2, '0')}:${_draftSavedAt!.minute.toString().padLeft(2, '0')}:${_draftSavedAt!.second.toString().padLeft(2, '0')} · ${_attachments.length} allegati${_draftDirty ? ' · modifiche da salvare' : ''}'),
+                              key: const ValueKey('report-draft-status'),
+                            ),
+                          ),
+                          if (_draftRestoreError != null)
+                            TextButton(
+                              onPressed: () {
+                                setState(() => _restoringDraft = true);
+                                _draftReady = _loadDraftSafely();
+                                unawaited(
+                                  _draftReady.catchError((Object _) {}),
+                                );
+                              },
+                              child: const Text('Riprova recupero bozza'),
+                            ),
+                        ],
+                        const SizedBox(height: 16),
+                        if (_isSubmitting) ...[
+                          const LinearProgressIndicator(),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: Text(
+                              _submissionStage,
+                              key: const ValueKey('report-send-progress'),
+                            ),
+                          ),
+                        ],
+                        if (_reportQueued)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 16),
+                            child: _submissionNotice(
+                              context,
+                              'Salvato sul telefono',
+                              'La centrale non ha ancora confermato la ricezione. Riprova invio riprende il report originale e i suoi allegati; i campi restano protetti fino alla conferma.',
+                              Icons.cloud_upload_outlined,
+                            ),
+                          ),
+                        if (_submissionError != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 16),
+                            child: _submissionNotice(
+                              context,
+                              'Invio da verificare',
+                              _submissionError!,
+                              Icons.error_outline,
+                            ),
+                          ),
+                        const OfflineSyncStatusPanel(),
+                        AbsorbPointer(
+                          key: const ValueKey('report-form-editable'),
+                          absorbing:
+                              _isSubmitting ||
+                              _reportQueued ||
+                              _restoringDraft ||
+                              _draftRestoreError != null,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _reportSection(
+                                context,
+                                'CONTROLLI ESEGUITI',
+                                Icons.fact_check_outlined,
+                                _buildChecklistSummary(context),
+                              ),
+                              _reportSection(
+                                context,
+                                'NOTE OPERATIVE',
+                                Icons.edit_note,
+                                _buildAnimatedTextField(context),
+                                subtitle:
+                                    'Descrivi il lavoro effettuato e l’esito dell’intervento. Campo obbligatorio.',
+                              ),
+                              _reportSection(
+                                context,
+                                'ALLEGATI FOTO',
+                                Icons.photo_camera_outlined,
+                                Column(
+                                  children: [
+                                    _buildAttachmentButtons(context),
+                                    const SizedBox(height: 12),
+                                    _buildAttachmentPreview(context),
+                                  ],
+                                ),
+                              ),
+                              _reportSection(
+                                context,
+                                'MISURE TECNICHE',
+                                Icons.monitor_heart_outlined,
+                                _buildMeasurements(context),
+                                subtitle:
+                                    'Indica parametro, unità e valore misurato.',
+                              ),
+                              _reportSection(
+                                context,
+                                'PEZZI SOSTITUITI',
+                                Icons.inventory_2_outlined,
+                                _buildPartsGrid(context),
+                              ),
+                              _reportSection(
+                                context,
+                                'CENTRALE OPERATIVA',
+                                Icons.notification_important_outlined,
+                                Column(
+                                  children: [
+                                    _buildCentralAlertToggle(context),
+                                    if (_hasCentralAlert) ...[
+                                      const SizedBox(height: 14),
+                                      _buildCentralAlertField(context),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                              _reportSection(
+                                context,
+                                'FIRMA',
+                                Icons.draw_outlined,
+                                _buildSignatureSection(context),
+                              ),
+                            ],
                           ),
                         ),
                       ],
-                      if (_reportQueued)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 16),
-                          child: _submissionNotice(
-                            context,
-                            'Salvato sul telefono',
-                            'La centrale non ha ancora confermato la ricezione. Riprova invio riprende il report originale e i suoi allegati; i campi restano protetti fino alla conferma.',
-                            Icons.cloud_upload_outlined,
-                          ),
-                        ),
-                      if (_submissionError != null)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 16),
-                          child: _submissionNotice(
-                            context,
-                            'Invio da verificare',
-                            _submissionError!,
-                            Icons.error_outline,
-                          ),
-                        ),
-                      const OfflineSyncStatusPanel(),
-                      AbsorbPointer(
-                        absorbing: _isSubmitting || _reportQueued,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _reportSection(
-                              context,
-                              'CONTROLLI ESEGUITI',
-                              Icons.fact_check_outlined,
-                              _buildChecklistSummary(context),
-                            ),
-                            _reportSection(
-                              context,
-                              'NOTE OPERATIVE',
-                              Icons.edit_note,
-                              _buildAnimatedTextField(context),
-                              subtitle:
-                                  'Descrivi il lavoro effettuato e l’esito dell’intervento. Campo obbligatorio.',
-                            ),
-                            _reportSection(
-                              context,
-                              'ALLEGATI FOTO',
-                              Icons.photo_camera_outlined,
-                              Column(
-                                children: [
-                                  _buildAttachmentButtons(context),
-                                  const SizedBox(height: 12),
-                                  _buildAttachmentPreview(context),
-                                ],
-                              ),
-                            ),
-                            _reportSection(
-                              context,
-                              'MISURE TECNICHE',
-                              Icons.monitor_heart_outlined,
-                              _buildMeasurements(context),
-                              subtitle:
-                                  'Indica parametro, unità e valore misurato.',
-                            ),
-                            _reportSection(
-                              context,
-                              'PEZZI SOSTITUITI',
-                              Icons.inventory_2_outlined,
-                              _buildPartsGrid(context),
-                            ),
-                            _reportSection(
-                              context,
-                              'CENTRALE OPERATIVA',
-                              Icons.notification_important_outlined,
-                              Column(
-                                children: [
-                                  _buildCentralAlertToggle(context),
-                                  if (_hasCentralAlert) ...[
-                                    const SizedBox(height: 14),
-                                    _buildCentralAlertField(context),
-                                  ],
-                                ],
-                              ),
-                            ),
-                            _reportSection(
-                              context,
-                              'FIRMA',
-                              Icons.draw_outlined,
-                              _buildSignatureSection(context),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1189,6 +1323,11 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
     return measurements;
   }
 
+  Future<Uint8List> _readPhoto(XFile photo) => _photoReads.putIfAbsent(
+    photo.path,
+    () => _attachmentStore.readBytes({'name': photo.name, 'path': photo.path}),
+  );
+
   Widget _buildAttachmentPreview(BuildContext context) {
     if (_attachments.isEmpty) {
       return Container(
@@ -1223,21 +1362,21 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(16),
-                child: Image.file(
-                  File(attachment.path),
-                  width: 110,
-                  height: 110,
-                  fit: BoxFit.cover,
+                child: ProtectedReportPhoto(
+                  bytes: _readPhoto(attachment),
+                  semanticLabel: 'Foto allegata ${index + 1}',
                 ),
               ),
               Positioned(
                 right: 6,
                 top: 6,
-                child: GestureDetector(
-                  onTap: () {
+                child: IconButton(
+                  tooltip: 'Rimuovi foto ${index + 1}',
+                  onPressed: () {
                     final removed = _attachments[index];
                     setState(() {
                       _attachments.removeAt(index);
+                      _photoReads.remove(removed.path);
                     });
                     unawaited(
                       _attachmentStore.remove([
@@ -1246,18 +1385,10 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
                     );
                     _scheduleDraftSave();
                   },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.black.withValues(alpha: 0.55),
-                    ),
-                    padding: const EdgeInsets.all(6),
-                    child: const Icon(
-                      Icons.close,
-                      color: Colors.white,
-                      size: 16,
-                    ),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.black.withValues(alpha: 0.55),
                   ),
+                  icon: const Icon(Icons.close, color: Colors.white, size: 16),
                 ),
               ),
             ],
@@ -1636,9 +1767,7 @@ class _ReportClosureScreenState extends ConsumerState<_ReportClosureFeature>
       final identity = await _identityFuture;
       final photos = <ReportPhoto>[];
       for (final attachment in _attachments) {
-        photos.add(
-          ReportPhoto(attachment.name, await attachment.readAsBytes()),
-        );
+        photos.add(ReportPhoto(attachment.name, await _readPhoto(attachment)));
       }
       final pdfBytes = await MaintenanceReportPdf.build(
         antennaId: widget.antennaId,

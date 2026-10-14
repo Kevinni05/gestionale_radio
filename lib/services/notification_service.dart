@@ -11,21 +11,69 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
-import 'auth_service.dart';
 import 'api_service.dart';
 import 'app_navigation.dart';
 import 'notification_delivery_guard.dart';
 import 'session_service.dart';
+import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:http/http.dart' as http;
+import 'sync_lifecycle_coordinator.dart';
+import 'local_operational_store.dart';
 
 class NotificationService {
-  NotificationService._();
+  NotificationService({
+    FirebaseAuth? auth,
+    FirebaseMessaging? messaging,
+    FlutterLocalNotificationsPlugin? localNotifications,
+    http.Client? client,
+    Stream<RemoteMessage>? messages,
+    Stream<RemoteMessage>? openedMessages,
+    Stream<bool>? networkChanges,
+    void Function()? registerBackgroundHandler,
+  }) : _auth = auth ?? FirebaseAuth.instance,
+       _messaging = messaging ?? FirebaseMessaging.instance,
+       _localNotifications =
+           localNotifications ?? FlutterLocalNotificationsPlugin(),
+       _client = client ?? ApiHttpClient.instance,
+       _messages = messages ?? FirebaseMessaging.onMessage,
+       _openedMessages = openedMessages ?? FirebaseMessaging.onMessageOpenedApp,
+       _networkChanges =
+           networkChanges ??
+           Connectivity().onConnectivityChanged.map(
+             (types) => types.any((type) => type != ConnectivityResult.none),
+           ),
+       _registerBackgroundHandler =
+           registerBackgroundHandler ??
+           (() => FirebaseMessaging.onBackgroundMessage(
+             firebaseMessagingBackgroundHandler,
+           )) {
+    _observedUid = _auth.currentUser?.uid;
+  }
 
-  static final NotificationService instance = NotificationService._();
+  static final NotificationService instance = NotificationService();
 
-  final FirebaseMessaging _messaging = FirebaseMessaging.instance;
-  final FlutterLocalNotificationsPlugin _localNotifications =
-      FlutterLocalNotificationsPlugin();
-  bool _authListenerRegistered = false;
+  final FirebaseAuth _auth;
+  final FirebaseMessaging _messaging;
+  final FlutterLocalNotificationsPlugin _localNotifications;
+  final http.Client _client;
+  final Stream<RemoteMessage> _messages, _openedMessages;
+  final Stream<bool> _networkChanges;
+  final void Function() _registerBackgroundHandler;
+  final _subscriptions = <StreamSubscription<dynamic>>[];
+  SyncLifecycleCoordinator? _recovery;
+  Future<void>? _tokenSync;
+  Future<void>? _deviceCleanup;
+  bool _needsRotation = false;
+  static const _deviceOwnerKey = 'notification_device_owner';
+  final _store = LocalOperationalStore.instance;
+  bool _localReady = false;
+  bool _loggingOut = false;
+  String? _departingUid;
+  bool _syncAgain = false;
+  Future<void>? _localInitialization;
+  int _revision = 0;
+  String? _observedUid;
   Future<void>? _initialization;
   final _deliveryGuard = NotificationDeliveryGuard();
 
@@ -34,54 +82,147 @@ class NotificationService {
   }
 
   Future<void> _initialize() async {
-    try {
-      await _initializeLocalNotifications();
-      await _requestPermission();
-      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-
-      final token = await _messaging.getToken();
-
-      if (token != null) await _registerTokenWithBackend(token);
-
-      if (!_authListenerRegistered) {
-        _authListenerRegistered = true;
-        FirebaseAuth.instance.authStateChanges().listen((_) async {
-          final refreshedToken = await _messaging.getToken();
-          if (refreshedToken != null) {
-            await _registerTokenWithBackend(refreshedToken);
+    // Reception must not depend on Play Services, permissions or an API request
+    // succeeding during startup. Install every listener before those awaits.
+    _registerBackgroundHandler();
+    _subscriptions.add(
+      _messages.listen((message) {
+        unawaited(
+          _attempt(
+            'Ricezione notifica',
+            () => _handleForegroundMessage(message),
+          ),
+        );
+      }),
+    );
+    _subscriptions.add(
+      _openedMessages.listen((message) {
+        unawaited(
+          _attempt(
+            'Apertura notifica',
+            () => _handleNotificationOpened(message),
+          ),
+        );
+      }),
+    );
+    _subscriptions.add(
+      _auth.idTokenChanges().listen((_) {
+        final uid = _auth.currentUser?.uid;
+        if (uid != _observedUid) {
+          final previousUid = _observedUid;
+          _observedUid = uid;
+          _revision++;
+          // A session may be replaced without going through the logout button.
+          // Rotate the installation token before associating the next account.
+          if (previousUid != null && !_loggingOut) {
+            AppNavigation.clearRequests();
+            _needsRotation = true;
           }
-        });
-      }
+        }
+        if (_loggingOut && _auth.currentUser?.uid != _departingUid) {
+          _loggingOut = false;
+          _departingUid = null;
+        }
+        unawaited(syncTokenWithBackend());
+      }),
+    );
+    _subscriptions.add(
+      _messaging.onTokenRefresh.listen((_) {
+        unawaited(syncTokenWithBackend());
+      }),
+    );
+    _recovery = SyncLifecycleCoordinator(
+      networkChanges: _networkChanges,
+      retry: (_) async {
+        AppNavigation.refreshNotifications();
+        AppNavigation.refreshTasks();
+        await syncTokenWithBackend();
+      },
+    )..start(retryImmediately: false);
 
-      _messaging.onTokenRefresh.listen((newToken) async {
-        await _registerTokenWithBackend(newToken);
-      });
+    // Cold-start navigation is independent of token registration too.
+    await _attempt('Notifica iniziale', () async {
+      final message = await _messaging.getInitialMessage().timeout(
+        const Duration(seconds: 10),
+      );
+      if (message != null) await _handleNotificationOpened(message);
+    });
+    await _attempt('Canale notifiche', _ensureLocalNotifications);
+    await _attempt('Notifica locale iniziale', _openLocalLaunch);
+    await _attempt('Permesso notifiche', _requestPermission);
+    await syncTokenWithBackend();
+  }
 
-      FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+  Future<void> _attempt(
+    String operation,
+    Future<void> Function() action,
+  ) async {
+    try {
+      await action();
+    } catch (error) {
+      // Never log payloads, tokens or server response bodies.
+      debugPrint('$operation non riuscita: ${error.runtimeType}');
+    }
+  }
 
-      FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationOpened);
-
-      final initialMessage = await FirebaseMessaging.instance
-          .getInitialMessage();
-
-      if (initialMessage != null) {
-        _handleNotificationOpened(initialMessage);
-      }
-    } catch (e) {
-      debugPrint('Errore inizializzazione notifiche: $e');
+  Future<void> _ensureLocalNotifications() async {
+    if (_localReady) return;
+    final future = _localInitialization ??= _initializeLocalNotifications();
+    try {
+      await future;
+      _localReady = true;
+    } finally {
+      if (identical(_localInitialization, future)) _localInitialization = null;
     }
   }
 
   /// Ri-registra il token FCM sul backend (es. dopo l'approvazione dell'account,
   /// quando prima il backend rispondeva 403).
-  Future<void> syncTokenWithBackend() async {
-    try {
-      final token = await _messaging.getToken();
-      if (token != null) await _registerTokenWithBackend(token);
-    } catch (e) {
-      debugPrint('Sync token FCM non riuscita: $e');
+  Future<void> syncTokenWithBackend() {
+    if (_loggingOut) return Future.value();
+    // Queue one further attempt when identity/token changes during a request.
+    final running = _tokenSync;
+    if (running != null) {
+      _syncAgain = true;
+      return running;
     }
+    final future = _attempt('Sync token FCM', () async {
+      final revision = _revision;
+      final user = _auth.currentUser;
+      if (user == null) return;
+      final identity = await user.getIdTokenResult();
+      final tenant = identity.claims?['tenantId']?.toString() ?? '';
+      if (tenant.isEmpty ||
+          !SessionService.isAppRole(identity.claims?['role'])) {
+        return;
+      }
+      final expectedOwner = jsonEncode([user.uid, tenant]);
+      final owner = await _store.read(_deviceOwnerKey);
+      if (owner != null && owner != expectedOwner) _needsRotation = true;
+      if (_revision != revision || _auth.currentUser?.uid != user.uid) return;
+      if (_needsRotation) await _clearInstallation();
+      final token = await _messaging.getToken().timeout(
+        const Duration(seconds: 20),
+      );
+      if (token != null && _isCurrent(user, revision)) {
+        await _registerTokenWithBackend(token, user, revision, tenant);
+      }
+    });
+    _tokenSync = future;
+    return future.whenComplete(() {
+      if (identical(_tokenSync, future)) _tokenSync = null;
+      if (_syncAgain) {
+        _syncAgain = false;
+        unawaited(syncTokenWithBackend());
+      }
+    });
   }
+
+  bool _isCurrent(User user, int revision) =>
+      !_loggingOut &&
+      !_needsRotation &&
+      _revision == revision &&
+      _auth.currentUser?.uid == user.uid;
 
   Future<void> _initializeLocalNotifications() async {
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -98,18 +239,6 @@ class NotificationService {
       },
     );
 
-    final launch = await _localNotifications.getNotificationAppLaunchDetails();
-    if (launch?.didNotificationLaunchApp == true) {
-      try {
-        final payload = jsonDecode(
-          launch?.notificationResponse?.payload ?? '{}',
-        );
-        if (payload is Map<String, dynamic>) await _openPayload(payload);
-      } catch (_) {
-        // Inbox remains available if an old notification cannot be resolved.
-      }
-    }
-
     final androidPlugin = _localNotifications
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
@@ -122,7 +251,6 @@ class NotificationService {
         importance: Importance.max,
       ),
     );
-    await androidPlugin?.requestNotificationsPermission();
   }
 
   Future<void> _requestPermission() async {
@@ -143,60 +271,76 @@ class NotificationService {
     );
   }
 
-  Future<void> _registerTokenWithBackend(String token) async {
-    final user = FirebaseAuth.instance.currentUser;
+  Future<void> _openLocalLaunch() async {
+    final launch = await _localNotifications.getNotificationAppLaunchDetails();
+    if (launch?.didNotificationLaunchApp != true) return;
+    final payload = jsonDecode(launch?.notificationResponse?.payload ?? '{}');
+    if (payload is Map<String, dynamic>) await _openPayload(payload);
+  }
 
-    if (user == null) {
-      debugPrint('FCM token ricevuto ma nessun utente autenticato.');
+  Future<void> _registerTokenWithBackend(
+    String token,
+    User user,
+    int revision,
+    String tenant,
+  ) async {
+    final identity = await user.getIdTokenResult().timeout(
+      const Duration(seconds: 20),
+    );
+    if (!_isCurrent(user, revision) ||
+        identity.claims?['tenantId']?.toString() != tenant ||
+        !SessionService.isAppRole(identity.claims?['role']) ||
+        (identity.claims?['tenantId']?.toString().trim() ?? '').isEmpty) {
+      return;
+    }
+    final idToken = identity.token;
+    if (idToken == null || idToken.isEmpty) return;
+    // Approved accounts already have an operator profile. Registering it on
+    // every sync adds an unnecessary failure point before the FCM endpoint.
+    final response = await _client
+        .post(
+          Uri.parse('${ApiService.baseUrl}/api/v1/operator/me/fcm-token'),
+          headers: {
+            'Authorization': 'Bearer $idToken',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({'fcmToken': token}),
+        )
+        .timeout(const Duration(seconds: 20));
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      debugPrint(
+        'Registrazione token FCM rifiutata: HTTP ${response.statusCode}',
+      );
       return;
     }
 
-    try {
-      final idToken = await AuthService.instance.requireIdToken();
-      await _ensureOperatorRegistered(idToken, user);
-      final response = await ApiHttpClient.instance.post(
-        Uri.parse('${ApiService.baseUrl}/api/v1/operator/me/fcm-token'),
-        headers: {
-          'Authorization': 'Bearer $idToken',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({'fcmToken': token}),
-      );
-
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        debugPrint(
-          'Registrazione token FCM rifiutata: ${response.statusCode} ${response.body}',
-        );
-        return;
-      }
-
-      debugPrint('FCM token registrato sul backend.');
-    } catch (e) {
-      debugPrint('Errore registrazione token FCM: $e');
-    }
+    if (!_isCurrent(user, revision)) return;
+    debugPrint('FCM token registrato sul backend.');
+    await _store.write(_deviceOwnerKey, jsonEncode([user.uid, tenant]));
   }
 
-  Future<void> _ensureOperatorRegistered(String idToken, User user) async {
-    final response = await ApiHttpClient.instance.post(
-      Uri.parse('${ApiService.baseUrl}/api/v1/operator/register'),
-      headers: {
-        'Authorization': 'Bearer $idToken',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'fullName':
-            user.displayName ?? user.email?.split('@').first ?? 'Operatore',
-        'email': user.email,
-      }),
-    );
-
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Impossibile associare l account operatore.');
-    }
+  /// Immediately stop accepting the previous tenant's payloads while revalidating.
+  void invalidateScope() {
+    _revision++;
+    _needsRotation = true;
+    AppNavigation.clearRequests();
+    unawaited(_attempt('Pulizia avvisi', _localNotifications.cancelAll));
+    unawaited(_attempt('Pulizia badge', PersonalBadgeCache.clearOwn));
+    unawaited(syncTokenWithBackend());
   }
 
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
-    if (!await _acceptPayload(message.data, 'show')) return;
+    await _acceptPayload(
+      message.data,
+      'show',
+      onAccept: () => _showForegroundMessage(message),
+    );
+  }
+
+  Future<void> _showForegroundMessage(RemoteMessage message) async {
+    final user = _auth.currentUser;
+    final revision = _revision;
     if (message.data['type'] == 'BADGE_UPDATED') {
       try {
         await PersonalBadgeCache.refresh();
@@ -205,14 +349,29 @@ class NotificationService {
       }
       return;
     }
+    AppNavigation.refreshNotifications();
     if (message.data['taskId'] != null) AppNavigation.refreshTasks();
     debugPrint('Notifica operativa ricevuta in foreground.');
     final notification = message.notification;
-    if (notification != null) {
+    if (notification != null ||
+        message.data['title'] != null ||
+        message.data['message'] != null) {
+      await _ensureLocalNotifications();
+      if (user == null || !_isCurrent(user, revision)) {
+        throw StateError('Identità cambiata.');
+      }
       await _localNotifications.show(
-        id: notificationDisplayId(message.data['notificationId'] as String),
-        title: notification.title ?? ProductBrand.appName,
-        body: notification.body ?? 'Nuova comunicazione operativa',
+        id: Platform.isAndroid
+            ? 0
+            : notificationDisplayId(message.data['notificationId'] as String),
+        title:
+            notification?.title ??
+            message.data['title']?.toString() ??
+            ProductBrand.appName,
+        body:
+            notification?.body ??
+            message.data['message']?.toString() ??
+            'Nuova comunicazione operativa',
         notificationDetails: NotificationDetails(
           android: AndroidNotificationDetails(
             'radiotech_alerts',
@@ -221,6 +380,7 @@ class NotificationService {
             importance: Importance.max,
             priority: Priority.high,
             icon: '@mipmap/ic_launcher',
+            tag: message.data['notificationId'] as String,
           ),
           iOS: const DarwinNotificationDetails(),
         ),
@@ -229,13 +389,18 @@ class NotificationService {
     }
   }
 
-  Future<bool> _acceptPayload(Map<String, dynamic> data, String channel) async {
+  Future<bool> _acceptPayload(
+    Map<String, dynamic> data,
+    String channel, {
+    Future<void> Function()? onAccept,
+  }) async {
     try {
-      final user = FirebaseAuth.instance.currentUser;
+      final user = _auth.currentUser;
       if (user == null) return false;
+      final revision = _revision;
       final claims = await user.getIdTokenResult();
       final tenant = claims.claims?['tenantId']?.toString() ?? '';
-      if (FirebaseAuth.instance.currentUser?.uid != user.uid ||
+      if (!_isCurrent(user, revision) ||
           !SessionService.isAppRole(claims.claims?['role'])) {
         return false;
       }
@@ -244,16 +409,32 @@ class NotificationService {
         uid: user.uid,
         tenantId: tenant,
         channel: channel,
+        onAccept: () async {
+          if (!_isCurrent(user, revision)) {
+            throw StateError('Identità cambiata.');
+          }
+          await onAccept?.call();
+        },
       );
-      return accepted && FirebaseAuth.instance.currentUser?.uid == user.uid;
+      return accepted && _isCurrent(user, revision);
     } catch (_) {
       return false;
     }
   }
 
   Future<void> _openPayload(Map<String, dynamic> data) async {
-    if (!await _acceptPayload(data, 'open')) return;
-    AppNavigation.openTask(data['taskId']?.toString());
+    await _acceptPayload(
+      data,
+      'open',
+      onAccept: () async {
+        final taskId = data['taskId']?.toString().trim() ?? '';
+        if (taskId.isNotEmpty) {
+          AppNavigation.openTask(taskId);
+        } else {
+          AppNavigation.openNotification(data['notificationId'] as String);
+        }
+      },
+    );
   }
 
   Future<void> _handleNotificationOpened(RemoteMessage message) =>
@@ -268,14 +449,28 @@ class NotificationService {
     return hash;
   }
 
-  Future<void> clearDeviceToken() async {
+  Future<void> clearDeviceToken() {
+    if (_deviceCleanup != null) return _deviceCleanup!;
+    if (_loggingOut) return Future.value();
+    final work = _clearDeviceToken();
+    _deviceCleanup = work;
+    return work.whenComplete(() {
+      if (identical(_deviceCleanup, work)) _deviceCleanup = null;
+    });
+  }
+
+  Future<void> _clearDeviceToken() async {
+    _loggingOut = true;
+    _departingUid = _auth.currentUser?.uid;
+    _revision++;
+    await _tokenSync;
     // Remove the relationship while the departing user's ID token is valid.
     // Local token deletion still runs if the backend is unavailable.
     try {
       final token = await _messaging.getToken();
-      if (token != null && FirebaseAuth.instance.currentUser != null) {
-        final idToken = await AuthService.instance.requireIdToken();
-        await ApiHttpClient.instance
+      if (token != null && _auth.currentUser != null) {
+        final idToken = await _auth.currentUser!.getIdToken();
+        await _client
             .delete(
               Uri.parse('${ApiService.baseUrl}/api/v1/operator/me/fcm-token'),
               headers: {
@@ -289,22 +484,32 @@ class NotificationService {
     } catch (_) {
       // Deleting the installation token invalidates stale server associations.
     }
-    try {
-      await _messaging.deleteToken();
-    } catch (_) {
-      /* Logout must still complete. */
-    }
-    try {
-      await _localNotifications.cancelAll();
-    } catch (_) {
-      /* Complete logout. */
-    }
+    _needsRotation = true;
+    await _attempt('Pulizia dispositivo', _clearInstallation);
     try {
       await PersonalBadgeCache.clearOwn();
     } catch (_) {
       /* Complete logout. */
     }
-    AppNavigation.requestedTask.value = null;
+    AppNavigation.clearRequests();
+  }
+
+  Future<void> _clearInstallation() async {
+    final revision = _revision;
+    // A failed rotation keeps the next account unassociated. Resume/network
+    // recovery must rotate successfully before registering or accepting push.
+    await _localNotifications.cancelAll();
+    await _messaging.deleteToken().timeout(const Duration(seconds: 10));
+    await _store.delete(_deviceOwnerKey);
+    if (revision == _revision) _needsRotation = false;
+  }
+
+  @visibleForTesting
+  Future<void> dispose() async {
+    await _recovery?.dispose();
+    for (final subscription in _subscriptions) {
+      await subscription.cancel();
+    }
   }
 }
 

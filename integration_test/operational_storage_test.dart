@@ -11,6 +11,25 @@ void main() {
     'Android SQLite and Keystore preserve identity-bound records across adapters',
     (tester) async {
       final store = LocalOperationalStore(useNative: true);
+      await store.write('notification_device_owner', 'qa-operator');
+      expect(
+        await LocalOperationalStore(
+          useNative: true,
+        ).read('notification_device_owner'),
+        'qa-operator',
+      );
+      await store.delete('notification_device_owner');
+      await store.write(
+        'session_validation_qa',
+        '{"uid":"qa-user","validatedAt":"2026-10-13T12:00:00Z"}',
+      );
+      expect(
+        await LocalOperationalStore(
+          useNative: true,
+        ).read('session_validation_qa'),
+        contains('qa-user'),
+      );
+      await store.delete('session_validation_qa');
       const key = 'report_receipt_qa_device_recovery';
       await store.write(key, 'Synthetic QA record');
       expect(

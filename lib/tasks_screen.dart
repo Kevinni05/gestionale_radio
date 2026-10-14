@@ -6,6 +6,9 @@ import 'package:geolocator/geolocator.dart';
 import 'models/task_summary.dart';
 import 'services/api_service.dart';
 import 'services/app_navigation.dart';
+import 'services/auth_service.dart';
+import 'services/session_service.dart';
+import 'features/tasks/check_in_preview.dart';
 import 'theme/radiotech_glass.dart';
 
 class TasksScreen extends StatefulWidget {
@@ -72,6 +75,12 @@ class _TasksScreenState extends State<TasksScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _act(TaskSummary task) async {
+    final uid = AuthService.instance.currentUid;
+    final tenant = SessionService.instance.tenantId;
+    bool current() =>
+        mounted &&
+        uid == AuthService.instance.currentUid &&
+        tenant == SessionService.instance.tenantId;
     final action = task.nextAction;
     if (action == null || _busy.contains(task.id)) return;
     if (action == 'REPORT') {
@@ -94,6 +103,11 @@ class _TasksScreenState extends State<TasksScreen> with WidgetsBindingObserver {
     setState(() => _busy.add(task.id));
     try {
       if (action == 'CHECKED_IN') {
+        Position? position;
+        if (widget.checkIn == null) {
+          position = await _prepareCheckIn(task, current);
+          if (position == null || !current()) return;
+        }
         if (task.status == 'ACCEPTED') {
           if (widget.changeStatus != null) {
             await widget.changeStatus!(task.id, 'EN_ROUTE');
@@ -101,35 +115,18 @@ class _TasksScreenState extends State<TasksScreen> with WidgetsBindingObserver {
             await ApiService.instance.updateTaskStatus(task.id, 'EN_ROUTE');
           }
         }
+        if (!current()) return;
         if (widget.checkIn != null) {
           await widget.checkIn!(task.id);
         } else {
-          if (!await Geolocator.isLocationServiceEnabled()) {
-            throw StateError('Attiva la posizione del dispositivo.');
-          }
-          var permission = await Geolocator.checkPermission();
-          if (permission == LocationPermission.denied) {
-            permission = await Geolocator.requestPermission();
-          }
-          if (permission == LocationPermission.denied ||
-              permission == LocationPermission.deniedForever) {
-            throw StateError(
-              'Consenti la posizione nelle impostazioni del dispositivo.',
-            );
-          }
-          final position = await Geolocator.getCurrentPosition(
-            locationSettings: const LocationSettings(
-              accuracy: LocationAccuracy.high,
-              timeLimit: Duration(seconds: 15),
-            ),
-          );
           await ApiService.instance.checkInTask(
             task.id,
-            latitude: position.latitude,
+            latitude: position!.latitude,
             longitude: position.longitude,
             accuracy: position.accuracy,
           );
         }
+        if (!current()) return;
         // Preserve backend lifecycle transitions without extra operator taps.
         if (widget.changeStatus != null) {
           await widget.changeStatus!(task.id, 'IN_PROGRESS');
@@ -154,6 +151,86 @@ class _TasksScreenState extends State<TasksScreen> with WidgetsBindingObserver {
     } finally {
       if (mounted) setState(() => _busy.remove(task.id));
     }
+  }
+
+  Future<Position?> _prepareCheckIn(
+    TaskSummary task,
+    bool Function() current,
+  ) async {
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      if (mounted && current()) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Attiva la posizione e riprova il check-in.'),
+            action: SnackBarAction(
+              label: 'Impostazioni',
+              onPressed: Geolocator.openLocationSettings,
+            ),
+          ),
+        );
+      }
+      return null;
+    }
+    var permission = await Geolocator.checkPermission();
+    if (!mounted || !current()) return null;
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (!mounted || !current()) return null;
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Posizione non autorizzata. Consenti il permesso e riprova.',
+          ),
+          action: SnackBarAction(
+            label: 'Impostazioni',
+            onPressed: Geolocator.openAppSettings,
+          ),
+        ),
+      );
+      return null;
+    }
+    final position = await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        timeLimit: Duration(seconds: 15),
+      ),
+    );
+    if (!mounted || !current()) return null;
+    if (!position.latitude.isFinite ||
+        !position.longitude.isFinite ||
+        !position.accuracy.isFinite ||
+        position.accuracy < 0) {
+      throw StateError(
+        'Posizione GPS non attendibile. Spostati all’aperto e riprova.',
+      );
+    }
+    final asset = task.antennaId == null
+        ? <String, dynamic>{}
+        : await ApiService.instance.getAntennaDetails(task.antennaId!);
+    if (!mounted || !current()) return null;
+    final lat = asset['lat'], lng = asset['lng'];
+    final distance = lat is num && lng is num
+        ? Geolocator.distanceBetween(
+            position.latitude,
+            position.longitude,
+            lat.toDouble(),
+            lng.toDouble(),
+          )
+        : null;
+    final confirmed = await confirmCheckIn(
+      context,
+      antenna:
+          asset['nome']?.toString() ??
+          asset['name']?.toString() ??
+          task.antennaId ??
+          task.title,
+      accuracy: position.accuracy,
+      distance: distance,
+    );
+    return confirmed && current() ? position : null;
   }
 
   @override
