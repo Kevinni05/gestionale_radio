@@ -98,6 +98,51 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     if (mounted && _clock.queue.isEmpty) await _refresh();
   }
 
+  Future<void> _transfer() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Consegna al responsabile'),
+        content: Text(
+          'Le ${_clock.queue.length} timbrature in attesa saranno conservate per la verifica nella dashboard. Dopo la conferma del server verrà riletto lo stato attuale; queste ore non saranno approvate automaticamente.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annulla'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Consegna e rileggi stato'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await _clock.transferToManager();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              "Timbrature consegnate al responsabile per la verifica.",
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    if (mounted) await _refresh();
+  }
+
   String _hours(dynamic value) {
     final m = (value as num? ?? 0).toInt();
     return '${m ~/ 60}:${(m % 60).toString().padLeft(2, '0')}';
@@ -330,6 +375,11 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                       onPressed: _busy ? null : () => _refresh(),
                       child: const Text('Riprova'),
                     ),
+                    if (_clock.queue.isNotEmpty)
+                      TextButton(
+                        onPressed: _busy ? null : _transfer,
+                        child: const Text('Consegna al responsabile'),
+                      ),
                   ],
                 ),
               Expanded(

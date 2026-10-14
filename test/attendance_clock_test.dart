@@ -5,6 +5,51 @@ import 'package:gestionale_radio/services/attendance_clock.dart';
 
 void main() {
   test(
+    'queue is cleared only after confirmed transfer to the manager',
+    () async {
+      final disk = <String, String>{};
+      bool online = true, receipt = false;
+      List<dynamic> archived = [];
+      Future<dynamic> request(
+        String path, {
+        String method = 'GET',
+        Map<String, dynamic>? body,
+      }) async {
+        if (path.endsWith('/recovery')) {
+          if (!receipt) throw const SocketException('offline');
+          archived = body!['events'] as List;
+          return {'id': 'recovery'};
+        }
+        if (!online && method == 'PUT') throw const SocketException('offline');
+        return {'status': 'OFF_DUTY', 'version': 0};
+      }
+
+      final clock = AttendanceClock(
+        request: request,
+        identity: () => 'a',
+        read: (k) async => disk[k],
+        write: (k, v) async {
+          disk[k] = v;
+        },
+      );
+      await clock.load();
+      online = false;
+      await clock.punch('START');
+      await expectLater(
+        clock.transferToManager(),
+        throwsA(isA<SocketException>()),
+      );
+      expect(clock.queue.length, 1);
+      receipt = true;
+      online = true;
+      await clock.transferToManager();
+      expect(archived.length, 1);
+      expect(clock.queue, isEmpty);
+      expect(clock.displayState!['status'], 'OFF_DUTY');
+    },
+  );
+
+  test(
     'offline punches survive reload and replay exactly once with original IDs',
     () async {
       final disk = <String, String>{};

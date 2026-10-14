@@ -124,6 +124,27 @@ class AttendanceClock {
     return result;
   }
 
+  Future<void> transferToManager() async {
+    if (_busy || queue.isEmpty) return;
+    _busy = true;
+    final captured = _scope!;
+    try {
+      _checkScope(captured);
+      await _request(
+        '/workforce/me/attendance/recovery',
+        method: 'POST',
+        body: {'events': List<Map<String, dynamic>>.from(queue)},
+      );
+      _checkScope(captured);
+      queue = [];
+      syncError = null;
+      await _save();
+    } finally {
+      _busy = false;
+    }
+    await sync();
+  }
+
   Future<void> punch(String action) async {
     if (_busy) throw StateError('Sincronizzazione in corso.');
     if (state == null) {
