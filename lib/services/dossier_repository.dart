@@ -87,7 +87,8 @@ class DossierRepository {
     final fileIds = <String>{};
     for (final section in ['photos', 'documents']) {
       for (final row in data[section] as List) {
-        fileIds.add((row as Map)['fileId'] as String);
+        final fileId = (row as Map)['fileId'];
+        if (fileId is String) fileIds.add(fileId);
       }
     }
     if (fileIds.length > 50) {
@@ -138,6 +139,8 @@ class DossierRepository {
     final owner = _owner();
     final cached = dossier['_offlineFiles'];
     if (cached is Map && cached[fileId] is Map) {
+      if (!DateTime.parse(dossier['validUntil'] as String).isAfter(_now()))
+        throw StateError('Copia offline scaduta.');
       return Map<String, dynamic>.from(cached[fileId] as Map);
     }
     final file = Map<String, dynamic>.from(

@@ -1,3 +1,4 @@
+import 'dart:ui' as ui;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -7,6 +8,7 @@ import 'package:printing/printing.dart';
 import 'package:gal/gal.dart';
 import 'services/dossier_repository.dart';
 import 'services/company_api.dart';
+import 'services/auth_service.dart';
 import 'theme/radiotech_glass.dart';
 
 const _tabs = <String, String>{
@@ -64,6 +66,8 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
   Map<String, dynamic>? _data;
   String? _error;
   bool _loading = true, _offline = false, _busy = false;
+  bool _foreground = true;
+  StreamSubscription<dynamic>? _authChanges;
   String _tab = 'overview';
   String? _owner;
   Timer? _timer;
@@ -81,6 +85,9 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
     } catch (_) {
       _owner = null;
     }
+    _authChanges = AuthService.instance.authStateChanges().listen((_) {
+      if (mounted && !_identityValid()) setState(() => _data = null);
+    });
     _load(offline: widget.startOffline);
     _timer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (!mounted) return;
@@ -98,7 +105,8 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
           _error = 'Copia offline scaduta. Scaricala nuovamente online.';
         });
       }
-      if (_tab == 'sessions' &&
+      if (_foreground &&
+          _tab == 'sessions' &&
           !_offline &&
           !_busy &&
           !_loading &&
@@ -112,12 +120,14 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
   void dispose() {
     _generation++;
     _timer?.cancel();
+    _authChanges?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
     if (state == AppLifecycleState.resumed && mounted && !_identityValid()) {
       setState(() => _data = null);
     }
@@ -158,7 +168,7 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
             .clamp(0, 100)
             .toInt();
       });
-      if (_tab == 'sessions' && !offline) await _loadSessions();
+      if (_foreground && _tab == 'sessions' && !offline) await _loadSessions();
     } catch (e) {
       if (mounted && generation == _generation) {
         setState(() => _error = e.toString());
@@ -459,6 +469,7 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
             Column(
               children: [
                 DropdownButtonFormField<int>(
+                  key: ValueKey('before_${d["version"]}'),
                   initialValue: _before.clamp(0, configs.length - 1).toInt(),
                   decoration: const InputDecoration(labelText: 'Prima'),
                   items: List.generate(
@@ -475,6 +486,7 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
+                  key: ValueKey('after_${d["version"]}'),
                   initialValue: _after.clamp(0, configs.length - 1).toInt(),
                   decoration: const InputDecoration(labelText: 'Dopo'),
                   items: List.generate(
@@ -618,6 +630,26 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
                   ),
                 ),
                 if (edges.isEmpty) _empty('Nessuna dipendenza registrata.'),
+                if (d['networkNotice'] != null) Text('${d['networkNotice']}'),
+                if (d['network'] is Map)
+                  ExpansionTile(
+                    title: const Text('Rete collegata'),
+                    children: _rows(_map(d['network']), 'edges').map((edge) {
+                      final nodes = _rows(_map(d['network']), 'nodes');
+                      String name(dynamic id) =>
+                          nodes
+                              .where((n) => n['id'] == id)
+                              .firstOrNull?['name']
+                              ?.toString() ??
+                          '$id';
+                      return ListTile(
+                        title: Text(
+                          '${name(edge['source'])} → ${name(edge['target'])}',
+                        ),
+                        subtitle: Text('${edge['type']} · ${edge['label']}'),
+                      );
+                    }).toList(),
+                  ),
               ],
             ),
           ),
@@ -665,7 +697,9 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
                 children: [
                   Text('${r['notes'] ?? ''}'),
                   OutlinedButton.icon(
-                    onPressed: () => _run(() => _viewFile(r)),
+                    onPressed: r['fileId'] == null
+                        ? null
+                        : () => _run(() => _viewFile(r)),
                     icon: const Icon(Icons.description_outlined),
                     label: const Text('Apri e condividi documento'),
                   ),
@@ -1125,6 +1159,12 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
           r'\.(png|jpe?g|webp)$',
           caseSensitive: false,
         ).hasMatch('${file['name']}')) {
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      final ratio = frame.image.width / frame.image.height;
+      frame.image.dispose();
+      codec.dispose();
+      if (!mounted || !_identityValid()) return;
       Navigator.of(context).push<void>(
         MaterialPageRoute(
           builder: (_) => Scaffold(
@@ -1143,6 +1183,7 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
             body: Center(
               child: InteractiveViewer(
                 child: _AnnotatedImage(
+                  aspectRatio: ratio,
                   bytes: bytes,
                   marks: _rows(row, 'annotations'),
                 ),
@@ -1352,15 +1393,24 @@ class _MeasurementPainter extends CustomPainter {
 }
 
 class _AnnotatedImage extends StatelessWidget {
-  const _AnnotatedImage({required this.bytes, required this.marks});
+  const _AnnotatedImage({
+    required this.bytes,
+    required this.marks,
+    required this.aspectRatio,
+  });
   final Uint8List bytes;
+  final double aspectRatio;
   final List<Map<String, dynamic>> marks;
   @override
-  Widget build(BuildContext context) => Stack(
-    children: [
-      Image.memory(bytes, width: double.infinity, fit: BoxFit.contain),
-      Positioned.fill(child: CustomPaint(painter: _AnnotationPainter(marks))),
-    ],
+  Widget build(BuildContext context) => AspectRatio(
+    aspectRatio: aspectRatio,
+    child: Stack(
+      fit: StackFit.expand,
+      children: [
+        Image.memory(bytes, width: double.infinity, fit: BoxFit.fill),
+        Positioned.fill(child: CustomPaint(painter: _AnnotationPainter(marks))),
+      ],
+    ),
   );
 }
 
@@ -1429,7 +1479,7 @@ class _PhotoAnnotations extends StatefulWidget {
 class _PhotoAnnotationsState extends State<_PhotoAnnotations> {
   final _marks = <Map<String, dynamic>>[];
   final _text = TextEditingController();
-  Offset? _start;
+  Offset? _start, _end;
   String _type = 'ARROW';
   @override
   void dispose() {
@@ -1484,13 +1534,21 @@ class _PhotoAnnotationsState extends State<_PhotoAnnotations> {
               Image.memory(widget.bytes, width: box.maxWidth),
               Positioned.fill(
                 child: LayoutBuilder(
-                  builder: (context, size) => Listener(
+                  builder: (context, size) => GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onPointerDown: (e) => _start = e.localPosition,
-                    onPointerCancel: (_) => _start = null,
-                    onPointerUp: (e) {
-                      if (_start == null || _marks.length >= 40) return;
-                      final a = _start!, b = e.localPosition;
+                    onPanStart: (e) {
+                      _start = e.localPosition;
+                      _end = e.localPosition;
+                    },
+                    onPanUpdate: (e) => _end = e.localPosition,
+                    onPanCancel: () {
+                      _start = null;
+                      _end = null;
+                    },
+                    onPanEnd: (_) {
+                      if (_start == null || _end == null || _marks.length >= 40)
+                        return;
+                      final a = _start!, b = _end!;
                       setState(
                         () => _marks.add({
                           'type': _type,
@@ -1502,6 +1560,7 @@ class _PhotoAnnotationsState extends State<_PhotoAnnotations> {
                         }),
                       );
                       _start = null;
+                      _end = null;
                     },
                     child: CustomPaint(painter: _AnnotationPainter(_marks)),
                   ),
