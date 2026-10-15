@@ -115,28 +115,34 @@ void main() {
       expect(writes, 0);
     },
   );
-  test('expiry during attachment download preserves the previous pack', () async {
-    var clock = now;
-    final storage = <String, String>{'dossier_account-a_a': 'previous'};
-    final repo = DossierRepository(
-      owner: () => 'account-a',
-      now: () => clock,
-      read: (key) async => storage[key],
-      write: (key, value) async {
-        storage[key] = value;
-      },
-      remove: (key) async {
-        storage.remove(key);
-      },
-      request: (path, {method = 'GET', body}) async {
-        if (path.endsWith('/dossier')) return snapshot();
-        clock = now.add(const Duration(hours: 24));
-        return {'name': 'original.pdf', 'base64': base64Encode([1, 2, 3])};
-      },
-    );
-    await expectLater(repo.download('a'), throwsStateError);
-    expect(storage['dossier_account-a_a'], 'previous');
-  });
+  test(
+    'expiry during attachment download preserves the previous pack',
+    () async {
+      var clock = now;
+      final storage = <String, String>{'dossier_account-a_a': 'previous'};
+      final repo = DossierRepository(
+        owner: () => 'account-a',
+        now: () => clock,
+        read: (key) async => storage[key],
+        write: (key, value) async {
+          storage[key] = value;
+        },
+        remove: (key) async {
+          storage.remove(key);
+        },
+        request: (path, {method = 'GET', body}) async {
+          if (path.endsWith('/dossier')) return snapshot();
+          clock = now.add(const Duration(hours: 24));
+          return {
+            'name': 'original.pdf',
+            'base64': base64Encode([1, 2, 3]),
+          };
+        },
+      );
+      await expectLater(repo.download('a'), throwsStateError);
+      expect(storage['dossier_account-a_a'], 'previous');
+    },
+  );
   test('offline metadata and originals use the capped pack expiry', () async {
     var clock = now;
     final storage = <String, String>{};
@@ -157,7 +163,10 @@ void main() {
                 .add(const Duration(days: 7))
                 .toIso8601String();
         }
-        return {'name': 'original.pdf', 'base64': base64Encode([1, 2, 3])};
+        return {
+          'name': 'original.pdf',
+          'base64': base64Encode([1, 2, 3]),
+        };
       },
     );
     await repo.download('a');
@@ -199,7 +208,10 @@ void main() {
         },
         request: (path, {method = 'GET', body}) async {
           if (path.endsWith('/dossier')) return snapshot();
-          return {'name': 'original.pdf', 'base64': base64Encode([1, 2, 3])};
+          return {
+            'name': 'original.pdf',
+            'base64': base64Encode([1, 2, 3]),
+          };
         },
       );
       await expectLater(repo.download('a'), throwsStateError);

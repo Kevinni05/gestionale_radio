@@ -116,7 +116,9 @@ class DossierRepository {
         ? expiry
         : _now().add(const Duration(hours: 24));
     if (!until.isAfter(_now())) {
-      throw StateError('Fascicolo scaduto durante il download. Riprova online.');
+      throw StateError(
+        'Fascicolo scaduto durante il download. Riprova online.',
+      );
     }
     final pack = jsonEncode({
       'owner': owner,
