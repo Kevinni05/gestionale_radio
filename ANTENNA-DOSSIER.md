@@ -37,6 +37,18 @@ Collezioni: `antennaDossiers` (con operations/audit), `antennaDossierGraph`, `an
 
 Backend: `DossierRulesTest`, `DossierEmulatorTest` (incluso in `npm run test:firestore`). Web: `web-tests/dossier-module.spec.js`, oltre alle suite esistenti. Mobile: `dossier_repository_test.dart`, `antenna_dossier_screen_test.dart`, analisi Flutter e suite Android esistenti. Nessuna dipendenza mobile nuova.
 
+I test offline coprono anche la scadenza durante il download, il limite effettivo di 24 ore su metadati e originali e il cambio account/logout durante la scrittura finale. Un download già scaduto non sostituisce la copia precedente; una scrittura terminata dopo la perdita della sessione viene rimossa.
+
+## Preparazione in VS Code e ordine di rilascio
+
+1. Aprire i due repository completi e aggiornare il branch `feat/antenna-dossier`. Usare gli ultimi commit dei PR #47 e #32; le build precedenti non comprendono necessariamente tutte le correzioni.
+2. Verificare prima il backend aggiornato nell'ambiente di collaudo, con la consueta identità keyless e `RADIOTECH_PUBLIC_BASE_URL` corretta. Il solo health check non prova la disponibilità delle nuove API: aprire un fascicolo autenticato dal web e verificarne la lettura. L'app aggiornata richiede queste API; un backend precedente può rispondere 404.
+3. Nel repository mobile eseguire `flutter pub get --enforce-lockfile`, `flutter analyze` e `flutter test`. Collegare il Samsung con debug USB autorizzato e controllarne l'identificativo con `flutter devices`.
+4. Avviare la build QA con l'URL dell'ambiente aggiornato, seguendo la configurazione di firma e App Check già documentata in `RELEASE.md`. `config/render.json` punta all'origine pubblica di produzione: usarlo solo dopo aver verificato che tale origine serva il backend aggiornato. Un telefono fisico non raggiunge il PC con `10.0.2.2`: usare l'indirizzo LAN del PC per un backend locale oppure l'origine HTTPS di collaudo.
+5. Eseguire gli otto scenari seguenti prima della distribuzione. Per il ponte A/B è sufficiente anche Samsung più emulatore, con due account operatore distinti. Una build debug e una release possono avere firme diverse: non disinstallare l'app esistente o cancellarne i dati per forzare l'aggiornamento.
+
+La compilazione Android in CI e il caricamento dell'APK sono passaggi distinti. Se lo spazio artefatti GitHub è esaurito, compilare sul PC seguendo `RELEASE.md`; l'assenza del file scaricabile non equivale a un errore di compilazione. Il collaudo fisico Samsung e la distribuzione non sono dichiarati eseguiti da questa guida.
+
 ## Collaudo Samsung dopo l'integrazione
 
 1. Aprire l'antenna dopo il QR e confrontare dati e revisione con il web.
