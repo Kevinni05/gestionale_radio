@@ -1,3 +1,4 @@
+import 'services/italian_labels.dart';
 import 'dart:ui' as ui;
 import 'dart:async';
 import 'dart:convert';
@@ -425,7 +426,7 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
                     contentPadding: EdgeInsets.zero,
                     title: Text('${r['title'] ?? r['id']}'),
                     subtitle: Text(
-                      '${r['summary'] ?? r['description'] ?? ''}\n${r['status'] ?? ''} · ${_stamp(r['submittedAt'] ?? r['createdAt'])}',
+                      '${r['summary'] ?? r['description'] ?? ''}\n${italianLabel(r['status']?.toString() ?? '')} · ${_stamp(r['submittedAt'] ?? r['createdAt'])}',
                     ),
                   ),
                 ),
