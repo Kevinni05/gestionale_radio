@@ -1136,6 +1136,9 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
     if (source == null) return;
     final picked = await ImagePicker().pickImage(source: source);
     if (picked == null || !mounted) return;
+    if (await picked.length() > 10000000) {
+      throw StateError('Fotografia oltre 10 MB.');
+    }
     final bytes = await picked.readAsBytes();
     if (bytes.length > 10000000) throw StateError('Fotografia oltre 10 MB.');
     if (!mounted) return;

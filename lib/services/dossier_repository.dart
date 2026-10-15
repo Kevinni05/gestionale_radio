@@ -179,27 +179,48 @@ class DossierRepository {
       throw StateError('La fotografia deve essere entro 10 MB.');
     }
     final owner = _owner(), revision = AuthService.instance.sessionRevision;
+    void lease() {
+      _check(owner);
+      if (revision != AuthService.instance.sessionRevision)
+        throw StateError('Sessione cambiata.');
+    }
+
     final token = await AuthService.instance.requireIdToken();
-    final url = Uri.parse(ApiService.apiV1Url('/files')).replace(
-      queryParameters: {'name': name, 'operationId': CompanyApi.operationId()},
-    );
-    final response = await ApiHttpClient.instance.post(
-      url,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/octet-stream',
+    lease();
+    final client = ApiHttpClient(
+      refreshToken: () async {
+        lease();
+        final fresh = await AuthService.instance.refreshIdToken();
+        lease();
+        return fresh;
       },
-      body: bytes,
     );
-    _check(owner);
-    if (revision != AuthService.instance.sessionRevision) {
-      throw StateError('Sessione cambiata.');
+    try {
+      final url = Uri.parse(ApiService.apiV1Url('/files')).replace(
+        queryParameters: {
+          'name': name,
+          'operationId': CompanyApi.operationId(),
+        },
+      );
+      final response = await client.post(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/octet-stream',
+        },
+        body: bytes,
+      );
+      lease();
+      if (response.statusCode < 200 || response.statusCode >= 300)
+        throw StateError('Caricamento non riuscito.');
+      final result = jsonDecode(response.body) as Map;
+      return (result['reference'] as String).replaceFirst(
+        'radiotech-file:',
+        '',
+      );
+    } finally {
+      client.close();
     }
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw StateError('Caricamento non riuscito.');
-    }
-    final result = jsonDecode(response.body) as Map;
-    return (result['reference'] as String).replaceFirst('radiotech-file:', '');
   }
 
   static Future<List<Map<String, dynamic>>> offlineIndex() async {
