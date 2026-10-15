@@ -2,6 +2,8 @@
 
 Branch: `feat/antenna-dossier` in entrambi i repository. PR web/backend #47; PR mobile #32. Il rilascio richiede entrambi; nessuna pubblicazione in produzione è avviata da questo lavoro.
 
+Versione mobile di questa consegna: **1.6.0**, versionCode **11004**, successivo a `1.5.4+11003` su `main`. Le build di questa funzionalità sono quindi distinguibili dall'aggiornamento precedente. La disponibilità dell'APK nei metadati pubblici va attivata soltanto dopo la reale compilazione, firma e verifica dell'artefatto; questo PR non pubblica un APK firmato.
+
 ## Le dieci funzioni concordate
 
 1. Fascicolo: pulsante nella tabella Antenne sul web, pulsante nella scheda mobile dopo la risoluzione QR. Identità, dati tecnici, riepilogo, interventi/report storici, documenti pubblicati, fotografie, componenti e problemi. Le misure registrate manualmente non sono presentate come telemetria automatica.
