@@ -181,8 +181,9 @@ class DossierRepository {
     final owner = _owner(), revision = AuthService.instance.sessionRevision;
     void lease() {
       _check(owner);
-      if (revision != AuthService.instance.sessionRevision)
+      if (revision != AuthService.instance.sessionRevision) {
         throw StateError('Sessione cambiata.');
+      }
     }
 
     final token = await AuthService.instance.requireIdToken();
@@ -211,8 +212,9 @@ class DossierRepository {
         body: bytes,
       );
       lease();
-      if (response.statusCode < 200 || response.statusCode >= 300)
+      if (response.statusCode < 200 || response.statusCode >= 300) {
         throw StateError('Caricamento non riuscito.');
+      }
       final result = jsonDecode(response.body) as Map;
       return (result['reference'] as String).replaceFirst(
         'radiotech-file:',
