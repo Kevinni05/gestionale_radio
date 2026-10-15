@@ -1,3 +1,4 @@
+import 'dossier_repository.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'notification_service.dart';
@@ -99,6 +100,11 @@ class AuthService {
       await OfflineTaskPackStore.clearOwn();
     } catch (_) {
       /* No approved operator session. */
+    }
+    try {
+      await DossierRepository.clearOwn();
+    } catch (_) {
+      // Copies remain scoped to their owner and expire independently.
     }
     await auth.signOut();
   }
