@@ -363,6 +363,13 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
                               color: Theme.of(context).colorScheme.tertiary,
                             ),
                           ),
+                        if (_error != null)
+                          Text(
+                            'Aggiornamento non riuscito: $_error',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
                         if (_busy) const LinearProgressIndicator(),
                       ],
                     ),
