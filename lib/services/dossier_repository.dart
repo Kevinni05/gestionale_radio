@@ -139,8 +139,9 @@ class DossierRepository {
     final owner = _owner();
     final cached = dossier['_offlineFiles'];
     if (cached is Map && cached[fileId] is Map) {
-      if (!DateTime.parse(dossier['validUntil'] as String).isAfter(_now()))
+      if (!DateTime.parse(dossier['validUntil'] as String).isAfter(_now())) {
         throw StateError('Copia offline scaduta.');
+      }
       return Map<String, dynamic>.from(cached[fileId] as Map);
     }
     final file = Map<String, dynamic>.from(

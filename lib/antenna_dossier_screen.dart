@@ -268,7 +268,7 @@ class _AntennaDossierScreenState extends State<AntennaDossierScreen>
     FutureOr<void> Function() action, {
     IconData icon = Icons.add,
   }) => OutlinedButton.icon(
-    onPressed: _busy || _offline
+    onPressed: _busy || _offline || _data?['canContribute'] == false
         ? null
         : () => _run(() async {
             await action();
@@ -1546,8 +1546,11 @@ class _PhotoAnnotationsState extends State<_PhotoAnnotations> {
                       _end = null;
                     },
                     onPanEnd: (_) {
-                      if (_start == null || _end == null || _marks.length >= 40)
+                      if (_start == null ||
+                          _end == null ||
+                          _marks.length >= 40) {
                         return;
+                      }
                       final a = _start!, b = _end!;
                       setState(
                         () => _marks.add({
