@@ -115,4 +115,95 @@ void main() {
       expect(writes, 0);
     },
   );
+  test('expiry during attachment download preserves the previous pack', () async {
+    var clock = now;
+    final storage = <String, String>{'dossier_account-a_a': 'previous'};
+    final repo = DossierRepository(
+      owner: () => 'account-a',
+      now: () => clock,
+      read: (key) async => storage[key],
+      write: (key, value) async {
+        storage[key] = value;
+      },
+      remove: (key) async {
+        storage.remove(key);
+      },
+      request: (path, {method = 'GET', body}) async {
+        if (path.endsWith('/dossier')) return snapshot();
+        clock = now.add(const Duration(hours: 24));
+        return {'name': 'original.pdf', 'base64': base64Encode([1, 2, 3])};
+      },
+    );
+    await expectLater(repo.download('a'), throwsStateError);
+    expect(storage['dossier_account-a_a'], 'previous');
+  });
+  test('offline metadata and originals use the capped pack expiry', () async {
+    var clock = now;
+    final storage = <String, String>{};
+    final repo = DossierRepository(
+      owner: () => 'account-a',
+      now: () => clock,
+      read: (key) async => storage[key],
+      write: (key, value) async {
+        storage[key] = value;
+      },
+      remove: (key) async {
+        storage.remove(key);
+      },
+      request: (path, {method = 'GET', body}) async {
+        if (path.endsWith('/dossier')) {
+          return snapshot()
+            ..['validUntil'] = now
+                .add(const Duration(days: 7))
+                .toIso8601String();
+        }
+        return {'name': 'original.pdf', 'base64': base64Encode([1, 2, 3])};
+      },
+    );
+    await repo.download('a');
+    final cached = (await repo.offline('a'))!;
+    expect(
+      DateTime.parse(cached['validUntil'] as String),
+      now.add(const Duration(hours: 24)),
+    );
+    clock = now.add(const Duration(hours: 24));
+    await expectLater(repo.file('a', 'file-a', cached), throwsStateError);
+    expect(await repo.offline('a'), isNull);
+    expect(storage, isEmpty);
+  });
+  for (final logout in [false, true]) {
+    final action = logout ? 'logout' : 'switch';
+    test('identity $action during final write removes the pack', () async {
+      var owner = 'account-a';
+      var signedIn = true;
+      final storage = <String, String>{};
+      final repo = DossierRepository(
+        owner: () {
+          if (!signedIn) {
+            throw StateError('Sessione operatore richiesta.');
+          }
+          return owner;
+        },
+        now: () => now,
+        read: (key) async => storage[key],
+        write: (key, value) async {
+          storage[key] = value;
+          if (logout) {
+            signedIn = false;
+          } else {
+            owner = 'account-b';
+          }
+        },
+        remove: (key) async {
+          storage.remove(key);
+        },
+        request: (path, {method = 'GET', body}) async {
+          if (path.endsWith('/dossier')) return snapshot();
+          return {'name': 'original.pdf', 'base64': base64Encode([1, 2, 3])};
+        },
+      );
+      await expectLater(repo.download('a'), throwsStateError);
+      expect(storage, isEmpty);
+    });
+  }
 }

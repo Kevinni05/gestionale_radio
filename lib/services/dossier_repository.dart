@@ -73,6 +73,7 @@ class DossierRepository {
       return null;
     }
     return Map<String, dynamic>.from(pack['data'] as Map)
+      ..['validUntil'] = pack['validUntil']
       ..['_offlineFiles'] = pack['files'];
   }
 
@@ -114,6 +115,9 @@ class DossierRepository {
     final until = expiry.isBefore(_now().add(const Duration(hours: 24)))
         ? expiry
         : _now().add(const Duration(hours: 24));
+    if (!until.isAfter(_now())) {
+      throw StateError('Fascicolo scaduto durante il download. Riprova online.');
+    }
     final pack = jsonEncode({
       'owner': owner,
       'validUntil': until.toIso8601String(),
@@ -124,10 +128,13 @@ class DossierRepository {
       throw StateError('Pacchetto troppo grande per il download offline.');
     }
     final key = 'dossier_${owner}_$id';
+    _check(owner);
     await _write(key, pack);
-    if (_owner() != owner) {
+    try {
+      _check(owner);
+    } catch (_) {
       await _remove(key);
-      throw StateError('Sessione cambiata durante il download.');
+      rethrow;
     }
   }
 
