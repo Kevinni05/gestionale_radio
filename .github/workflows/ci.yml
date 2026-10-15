@@ -56,6 +56,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Free hosted runner disk for Android QA
+        # Only unused SDKs on this disposable GitHub runner; keep all Android/Java tooling.
+        shell: bash
+        run: |
+          for unused_sdk in /usr/share/dotnet /usr/local/.ghcup /opt/ghc /usr/local/share/boost; do
+            if [ -d "$unused_sdk" ]; then sudo rm -rf -- "$unused_sdk"; fi
+          done
+          df -h "$RUNNER_TEMP"
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
