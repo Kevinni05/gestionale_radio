@@ -84,7 +84,7 @@ jobs:
         id: qa_artifact
         # A copy for review is optional; compilation and native tests above remain mandatory.
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: radiotech-android-qa
           path: build/app/outputs/flutter-apk/app-debug.apk
@@ -235,7 +235,7 @@ jobs:
 
       - name: Upload signed APK artifact
         if: steps.distribution-config.outputs.enabled == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: radiotech-android-distribution
           path: build/app/outputs/flutter-apk/app-release.apk
