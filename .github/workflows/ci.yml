@@ -4,6 +4,7 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,16 +18,15 @@ jobs:
     name: Flutter analyze and tests
     timeout-minutes: 15
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      app: ${{ steps.changes.outputs.app }}
+      device: ${{ steps.changes.outputs.device }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          flutter-version: '3.44.9'
-          cache: true
 
       - name: Reject tracked private key material
         shell: bash
@@ -39,17 +39,50 @@ jobs:
             exit 1
           fi
 
+      - name: Identify app and device changes
+        id: changes
+        if: github.event_name != 'workflow_dispatch'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        with:
+          base: ${{ github.ref }}
+          # Documentation is the only broad exclusion: new code paths still run CI.
+          predicate-quantifier: every
+          filters: |
+            app:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!.github/ISSUE_TEMPLATE/**'
+              - '!.github/PULL_REQUEST_TEMPLATE*'
+              - '!.github/dependabot.yml'
+              - '!LICENSE*'
+            device:
+              - '{android/**,integration_test/**,lib/services/**,lib/models/**,lib/main.dart,lib/firebase_options.dart,pubspec.yaml,pubspec.lock,.metadata,config/**,.github/workflows/ci.yml}'
+
+      - name: Set up Flutter
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.app == 'true'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.44.9'
+          cache: true
+
       - name: Install Flutter dependencies
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.app == 'true'
         run: flutter pub get --enforce-lockfile
 
       - name: Analyze Flutter project
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.app == 'true'
         run: flutter analyze
 
       - name: Run Flutter tests
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.app == 'true'
         run: flutter test --reporter expanded --timeout 2m
 
   android-qa:
     name: Android QA compile
+    needs: quality
+    if: github.event_name == 'workflow_dispatch' || needs.quality.outputs.app == 'true'
     timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
@@ -88,7 +121,7 @@ jobs:
         with:
           name: radiotech-android-qa
           path: build/app/outputs/flutter-apk/app-debug.apk
-          retention-days: 7
+          retention-days: 3
 
       - name: Report unavailable QA artifact
         if: steps.qa_artifact.outcome == 'failure'
@@ -244,6 +277,9 @@ jobs:
 
   android-device:
     name: Android emulator persistence and recovery
+    # Run costly native checks only after the cheaper checks and compilation pass.
+    needs: [quality, android-qa]
+    if: github.event_name == 'workflow_dispatch' || needs.quality.outputs.device == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
